@@ -1,8 +1,14 @@
 #include <iostream>
 #include <string>
 #include <cmath>
+#include <fstream>
 using namespace std;
 #include "ini.cxx"
+
+void initialize(){
+    m.set();
+}
+
 float photon_yield(string loss_type, int energy_gev, float track_length) {
     float rho = 0.9216f; // density of ice in icecube
     float logE = logf(energy_gev);
@@ -23,7 +29,8 @@ float photon_yield(string loss_type, int energy_gev, float track_length) {
 
 int main(int argc, char* argv[]) {
     // Arguements: loss type str, energy gev, track length m
-    cout << "ahhh" << endl;
+    cout << "initalizing: " << endl;
+    initialize();
     string loss_type= argv[1];
     int energy_gev = stoi(argv[2]);
     float track_length = stof(argv[3]);
