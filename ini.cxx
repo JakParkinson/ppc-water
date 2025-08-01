@@ -3,6 +3,7 @@ static unsigned int ovr=1; // oversize radius, default 1
 
 
 struct dats {
+  float SF, G, GR; // hole ice sf, g, gr
   float xR; // DOM oversize scaling factor
 } d;
 
@@ -82,10 +83,16 @@ struct ini {
         }
 	    }
 
-      if(v.size()>=4) { // the newer cfg.txt
-        int xR = lroundf(v[0]);
+      if(v.size()>=4) { // at least 4 lines in cfg.txt
+        int xR = lroundf(v[0]); // first line is oversize radius
         d.xR = xR;
-        ovr*=xR*xR;
+        ovr*=xR*xR; // squared because 2D pancake
+
+        if (v.size()<12) {
+          d.SF = d.sf; // hole ice properties
+          d.G = d.g;
+          d.GR = d.gr;
+        }
       }
 
 
