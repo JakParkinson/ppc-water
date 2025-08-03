@@ -1,7 +1,11 @@
+
 #include <iostream>
 #include <string>
 #include <cmath>
 #include <fstream>
+#include <vector>  // ADD THIS - needed for std::vector
+#include <cstdlib> // ADD THIS - needed for getenv, atof, etc.
+
 using namespace std;
 #include "ini.cxx"
 
