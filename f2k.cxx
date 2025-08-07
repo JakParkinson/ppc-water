@@ -167,58 +167,6 @@ float yield(float E, float dr, int type){
 }
 
 #ifdef XLIB
-struct mcid:pair<int,unsigned long long>{
-  int frame;
-  double t0;
-
-  bool operator< (const mcid & rhs) const {
-    return
-      frame!=rhs.frame ? frame<rhs.frame :
-      first!=rhs.first ? first<rhs.first :
-      second!=rhs.second ? second<rhs.second :
-      t0<rhs.t0;
-  }
-};
-
-struct ihit{
-  mcid track;
-  ikey omkey;
-  int pmt;
-  float dir;
-  float time;
-
-  bool operator< (const ihit & rhs) const {
-    return
-      track!=rhs.track ? track<rhs.track :
-      omkey!=rhs.omkey ? omkey<rhs.omkey :
-      pmt!=rhs.pmt ? pmt<rhs.pmt :
-      dir!=rhs.dir ? dir<rhs.dir :
-      time<rhs.time;
-  }
-} tmph;
-
-float trz=0;
-
-void set_res(float t){
-  trz=t;
-}
-
-float crz=0;
-
-void set_res(float t, float c){
-  trz=t; crz=c;
-}
-
-float res(float val, float bin){
-  return bin>0?(floor(val/bin)+0.5)*bin:val;
-}
-
-deque<mcid> flnz;
-
-struct pout{
-  float r[4], n[4];
-};
-map<ihit, vector<pout> > hitz;
 #else
 deque<string> flnz;
 #endif
@@ -258,8 +206,8 @@ void print(){
     }
 
     for(; (int) ( flnb - h.n ) < 0; flnb++){
+
 #ifdef XLIB
-      tmph.track=flnz.front();
 #else
       cout<<flnz.front()<<endl;
 #endif
@@ -324,23 +272,6 @@ void print(){
     if(flag){
       float wv=q.wvs[h.z].x();
 #ifdef XLIB
-      tmph.omkey=n;
-      tmph.pmt=pmt;
-      tmph.time=res(h.t, trz);
-      tmph.dir=res(1+cos(h.pth), crz)-1;
-
-      pout p;
-      float omr=q.oms[h.i].R;
-
-      p.r[0]=-omr*rx;
-      p.r[1]=-omr*ry;
-      p.r[2]=-omr*rz;
-      p.r[3]=h.t;
-      p.n[0]=nx;
-      p.n[1]=ny;
-      p.n[2]=nz;
-      p.n[3]=wv;
-      hitz[tmph].push_back(p);
 #else
       if(nextgen){
 	printf("HIT %d %d_%d %f %f %f %f %f %f\n", n.str, n.dom, pmt, h.t, wv, h.pth, h.pph, h.dth, h.dph);
@@ -354,7 +285,6 @@ void print(){
 
   for(; (int) ( flnb - flnd ) < 0; flnb++){
 #ifdef XLIB
-    tmph.track=flnz.front();
 #else
     cout<<flnz.front()<<endl;
 #endif
@@ -369,9 +299,6 @@ void output(){
 
   kernel(pn); pn=0; pk=0;
 
-#ifndef XCPU
-  flnd=flne;
-#endif
 }
 
 void addh(unsigned long long num){
@@ -503,30 +430,7 @@ void addp(float rx, float ry, float rz, float t, float E, float dr, int type, fl
   addh(num);
 }
 
-#ifdef XLIB
-void addp_clst(float rx, float ry, float rz, float t, unsigned long long n, float dr, float beta){
-  p.type=0;
-  p.r.w=t; p.r.x=rx; p.r.y=ry; p.r.z=rz;
-  p.n.w=dr; p.f=1.f; p.a=0, p.b=0;
-  p.beta=beta; p.tau=0;
 
-  // when 0<qmas<1 assume n is given for DOM w/o the maximum of the OM sensitivy curve rescaling (i.e. as if qmas=1)
-  // if other types of optimization downsampling are needed (i.e., other parts of q.eff), this is where they would go
-  float qmas=1.f;
-  unsigned long long num=qmas>0&&qmas<1?bnldev(n, qmas):n;
-  addh(num);
-}
-
-void addp_mopo(float rx, float ry, float rz, float t, float light, float length, float beta, float tau, float fr){
-  p.type=0;
-  p.r.w=t; p.r.x=rx; p.r.y=ry; p.r.z=rz;
-  p.n.w=length; p.f=fr; p.a=0, p.b=0;
-  p.beta=beta; p.tau=tau;
-
-  unsigned long long num=poidev(light*q.eff/ovr);
-  addh(num);
-}
-#endif
 
 void finc(){
   flne++;
@@ -535,21 +439,10 @@ void finc(){
 
 void eout(){
   output();
-#ifndef XCPU
-  output();
-#endif
+
 }
 
 #ifdef XLIB
-void efin(){
-  hitz.erase(hitz.begin(), hitz.end());
-}
-
-void sett(float nx, float ny, float nz, pair<int,unsigned long long> id, int frame, double t0 = 0){
-  mcid ID; ID.first=id.first; ID.second=id.second; ID.frame=frame; ID.t0=t0;
-  flnz.push_back(ID); finc();
-  p.q=flne; p.n.x=nx; p.n.y=ny; p.n.z=nz;
-}
 #else
 
 void f2k(){
@@ -759,11 +652,6 @@ const DOM& flset(int str, int dom){
 }
 
 #ifdef XLIB
-const float * fldir(){
-  static float dir[3] = {pfl.n.x, pfl.n.y, pfl.n.z};
-  return dir;
-}
-
 #else
 void flasher(int str, int dom, unsigned long long num, int itr){
   ini();

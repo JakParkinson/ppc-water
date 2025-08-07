@@ -1,4 +1,3 @@
-#ifdef XCPU
 #define __host__
 #define __device__
 #define __global__
@@ -42,15 +41,14 @@ struct BlockDim{
 } blockDim;
 
 unsigned int seed=0;
-#endif
+
 
 __device__ float xrnd(uint4 & s){
   unsigned long long sda = s.y;
-#ifdef XCPU
+
+  //xcpu
   sda += s.z * (unsigned long long) s.x;
-#else
-  asm("mad.wide.u32 %0, %1, %2, %0;" : "+l"(sda) : "r"(s.x), "r"(s.z));
-#endif
+
   s.x = sda; s.y = sda >> 32;
   unsigned int tmp = s.x >> 9; // (0; 1]
   return 2.f-__int_as_float(tmp|0x3f800000);
@@ -152,10 +150,6 @@ __device__ void rotate(float cs, float si, float4 & n, uint4 & s){
   }
 }
 
-#ifndef XCPU
-__host__ __device__ int __float2int_rd(float x);
-__host__ int __float2int_rd(float x){ return (int)floorf(x); }
-#endif
 
 __host__ __device__ float square(float x){
   return x*x;
@@ -268,13 +262,7 @@ __device__ void ctr(dats & d, float2 & r, float2 & p){
   p.y=d.cb[0][1]*r.x+d.cb[1][1]*r.y;
 }
 
-#ifndef XCPU
-__device__ inline unsigned int smid(){
-  unsigned int r;
-  asm volatile("mov.u32 %0, %%smid;" : "=r"(r));
-  return r;
-}
-#endif
+
 
 #if defined(XCPU) || defined(DTMN)
 #define XINC i+=eidx
@@ -286,45 +274,19 @@ __device__ inline unsigned int smid(){
 
 __global__ void propagate(dats * ed, unsigned int num){
   uint4 s;
-#ifdef XCPU
+
   float4 n;
   float4 r;
   dats & e = * ed;
   static unsigned int eidx;
   if(threadIdx.x==0) eidx = XIDX;
-#else
-  float4 n={0,0,0,0};
-  float4 r={0,0,0,0};
-  __shared__ dats e;
-  unsigned int & eidx = e.hidx;
 
-  if(num==0){
-    ed->hidx=0;
-    ed->tn=-1U;
-    ed->tx=0;
-    ed->ab=0;
-    ed->mp=0;
-    __threadfence();
-    return;
-  }
-
-  if(threadIdx.x==0){
-    e=*ed; e.tn=clock();
-    e.blockIdx=smid()==e.blockIdx?-1:(int)atomicAdd(&ed->mp, 1);
-    eidx=XIDX;
-  }
-  __syncthreads();
-
-  if(e.blockIdx==-1) return;
-#endif
 
   ices * w;
   const unsigned int idx=threadIdx.x*e.gridDim+e.blockIdx;
 
   {
-#ifndef XCPU
-    const unsigned int & seed = idx;
-#endif
+
     s.w=seed%e.rsize;
     s.x=e.z->rs[s.w];
     s.y=e.z->rs[s.w] >> 32;
@@ -475,9 +437,7 @@ __global__ void propagate(dats * ed, unsigned int num){
 
     pbuf f; f.r=r, f.n=n; f.q=j; f.i=p.q; f.fla=fla, f.ofla=ofla; e.bf[i]=f;
   }
-#ifndef XCPU
-  __syncthreads();
-#endif
+
 
   int ofla=-1, old;
   unsigned int niw=0;
@@ -724,9 +684,7 @@ __global__ void propagate(dats * ed, unsigned int num){
       r.w+=del*n.w;
     }
 
-#ifndef XCPU
-    if(!isfinite(TOT) || !isfinite(SCA)) ed->bmp[atomicAdd(&ed->ab, 1)%4]=smid(), TOT=0, om=-1;
-#endif
+
 
     if(om!=-1){ // DOM collision was detected
       if(om==ofla) TOT=0;
@@ -890,15 +848,6 @@ __global__ void propagate(dats * ed, unsigned int num){
 
   {
     e.z->rs[s.w]=s.x | (unsigned long long) s.y << 32;
-#ifndef XCPU
-    __syncthreads();
-    if(threadIdx.x==0){
-      e.tx=clock();
-      atomicMin(&ed->tn, e.tx-e.tn);
-      atomicMax(&ed->tx, e.tx-e.tn);
-    }
-    __threadfence();
-#endif
   }
 
 }
