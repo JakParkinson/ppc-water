@@ -14,8 +14,6 @@
 #define OVER 1
 #define NBLK 1
 #define NTHR 512
-#else
-#define OVER 128     // minimum number of photons per particle (optimized)
 #endif
 
 #define NPHO   1024  // maximum number of photons propagated by one thread
@@ -422,12 +420,7 @@ struct datz{
 struct dats{
   unsigned int hidx;
 
-#ifndef XCPU
-  unsigned int tn, tx;  // kernel time clocks
-  unsigned int ab;      // if TOT was abnormal
-  unsigned int mp;      // kernel block counter
-  short bmp[4];         // list of 4 faulty MPs
-#endif
+
   short blockIdx, gridDim;  // bad/current MP; number of MPs
 
   unsigned int gdev;  // number of this GPU
@@ -540,42 +533,34 @@ void rs_ini(){
   for(int i=0; i<d.rsize; i++) z.rs[i]=s.da;
 }
 
-
-struct ini {
+struct ini{
   float ctr(line & s, int m){
     return d.cb[0][m]*s.x+d.cb[1][m]*s.y;
   }
 
-  void set() {
+  void set(){
     {
       d.hidx=0;
       d.z=&z;
     }
-  //  float d = 0.0f;
-  
 
     string ppcdir("");
     {
-      char * env = getenv("PPCTABLESDIR"); // gets PPCTABLESDIR location
-      if(env!=NULL) {
-        ppcdir=string(env)+"/"; // sets PPCTABLESDIR str
-        cerr<<"Configuring ppc in \""<<ppcdir<<"\""<<endl;
+      char * env = getenv("PPCTABLESDIR");
+      if(env!=NULL) ppcdir=string(env)+"/";
+      else{
+	env = getenv("I3_SRC");
+	if(env!=NULL) ppcdir=string(env)+"/ppc/resources/ice/";
       }
-      else {
-        cerr << "NO PPCTABLESDIR SET!" << endl;
-      }
+      cerr<<"Configuring ppc in \""<<ppcdir<<"\""<<endl;
     }
 
     string omdir("");
     {
       char * env = getenv("NEXTGENDIR");
-      if (env!=NULL) {
-        omdir=string(env) + "/";
-        cerr << "using user set NEXTGENDIR: " << omdir << endl;
-      } else {
-        omdir = ppcdir;
-        cerr << "using PPCTABLESDIR as omdir: " << omdir << endl;
-      }
+      if(env!=NULL) omdir=string(env)+"/";
+      else omdir=ppcdir;
+      cerr<<"Configuring nextgen sensors in \""<<omdir<<"\""<<endl;
     }
 
     string icedir("");
@@ -607,201 +592,170 @@ struct ini {
     {
       ifstream inFile((icedir+"cfg.txt").c_str(), ifstream::in);
       if(!inFile.fail()){
-        string in;
-        float aux;
-        vector<float> v;
+	string in;
+	float aux;
+	vector<float> v;
+	while(getline(inFile, in)) if(sscanf(in.c_str(), "%f", &aux)==1) v.push_back(aux);
 
-        while (getline(inFile, in)) {
-          if(sscanf(in.c_str(), "%f", &aux)==1) v.push_back(aux);
-        }
-      
+	{
+	  char * OVSZ=getenv("OVSZ");
 
-        {
-          char * OVSZ=getenv("OVSZ");
+	  if(OVSZ!=NULL){
+	    float ovsz=atof(OVSZ); if(v.size()>=1) v[0]=ovsz;
+	    cerr<<"Using oversize as set with OVSZ="<<ovsz<<endl;
+	  }
+	}
 
-          if(OVSZ!=NULL){
-            float ovsz=atof(OVSZ); if(v.size()>=1) v[0]=ovsz;
-            cerr<<"Using oversize as set with OVSZ="<<ovsz<<endl;
-          }
-        }
+	if(v.size()>=4){
+	  int xR=lroundf(v[0]); d.xR=xR; ovr*=xR*xR;
+	  q.eff=v[1], d.sf=v[2], d.g=v[3]; d.gr=(1-d.g)/(1+d.g);
+	  cerr<<"Configured: xR="<<xR<<" eff="<<q.eff<<" sf="<<d.sf<<" g="<<d.g<<endl;
 
-        if(v.size()>=4) { // at least 4 lines in cfg.txt
-          int xR = lroundf(v[0]); // first line is oversize radius
-          d.xR = xR;
-          ovr*=xR*xR; // squared because 2D pancake
+	  if(v.size()<12) d.SF=d.sf, d.G=d.g, d.GR=d.gr;
+	  else d.SF=v[10], d.G=v[11], d.GR=(1-d.G)/(1+d.G);
 
-          q.eff = v[1]; // second line is DOM effeciency correction
-          d.sf  = v[2]; // third line is scattering function: 0=HG; 1=SAM
-          d.g   = v[3]; // fourth line is g=<cos(scattering angle)>
-          d.gr = (1-d.g)/(1+d.g);
+	  if(v.size()>=10){
+	    float xH=v[7], hS=v[8], hA=v[9];
+	    d.hr=OMR*xH; d.hr2=d.hr*d.hr; d.hs=1/(hS*(1-d.G)), d.ha=1/hA;
+	    if(xH>0) cerr<<"With hole ice: xH="<<xH<<" sca="<<hS<<" ("<<d.SF<<","<<d.G<<") abs="<<hA<<endl;
+	  }
+	  else d.hr=0, d.hr2=0, d.hs=0, d.ha=0;
 
-          cerr << "Configured xR (oversize) = " << xR << " eff= " << q.eff << " sf scattering= " << d.sf << " g=<cos(scattering angle)>: " << d.g << endl;
-          
-          if (v.size()<12) {
-            d.SF = d.sf; // hole ice properties
-            d.G = d.g;
-            d.GR = d.gr;
-          } else {
-            d.SF=v[10], d.G=v[11], d.GR=(1-d.G)/(1+d.G);
-          }
+	  if(v.size()>=7){
+	    const float thx=v[4];
+	    d.azx=cos(fcv*thx), d.azy=sin(fcv*thx);
+	    dk1=exp(v[5]); dk2=exp(v[6]); dkz=1/(dk1*dk2);
+	    cerr<<"Ice anisotropy is k("<<thx<<")="<<dk1<<","<<dk2<<","<<dkz<<endl;
+	  }
+	  else dk1=1, dk2=1, dkz=1, d.azx=1, d.azy=0;
 
-          if (v.size()>=10) {
-            float xH=v[7]; // hole ice radius in units of [DOM radius]
-            float hS = v[8]; // hole ice effective scattering length [m]
-            float hA = v[9]; //hole ice absorption length [m]
-            d.hr = OMR*xH; // hole ice radius in meters;
-            d.hr2 = d.hr*d.hr; 
-            d.hs = 1/(hS*(1-d.G));
-            d.ha = 1/hA;
-            if (xH > 0) cerr << "Simulating hole ice with DOM radius: " << xH << " , and sca length: " << hS << "m " <<" ("<<d.SF<<","<<d.G<<") abs="<<hA<<endl;
-          } else {
-            d.hr=0, d.hr2=0, d.hs=0, d.ha=0;
-            cerr << "NOT simulating hole ice" << endl;
-          }
+	  if(v.size()>=15){
+	    // new absorption anisotropy
+	    d.k1=exp(v[12]); d.k2=exp(v[13]); d.kz=exp(v[14]);
+	    cerr<<"New Ice anisotropy is "<<d.k1<<","<<d.k2<<","<<d.kz<<endl;
+	    if(d.k1>=d.k2 && d.k2==d.kz){
+	      float r=d.k1/d.k2;
+	      float s=sqrt(r*r-1);
+	      r=(s>XXX?log(r+s)/s:1+s/2)/d.k2;
+	      d.k1*=r, d.k2*=r, d.kz*=r;
+	      cerr<<"Renorm. NI anisotropy "<<d.k1<<","<<d.k2<<","<<d.kz<<endl;
+	    }
+	    else{
+	      cerr<<"Warning: taking absorption anisotropy as given (not renormalizing)!"<<endl;
+	    }
+	  }
+	  else d.k1=1, d.k2=1, d.kz=1;
 
-          if(v.size()>=7){
-            const float thx=v[4];
-            d.azx=cos(fcv*thx), d.azy=sin(fcv*thx);
-            dk1=exp(v[5]); dk2=exp(v[6]); dkz=1/(dk1*dk2);
-            cerr<<"Ice anisotropy is k("<<thx<<")="<<dk1<<","<<dk2<<","<<dkz<<endl;
-          }
-          else {
-            dk1=1, dk2=1, dkz=1, d.azx=1, d.azy=0;
-            cerr << "NOT simulating anisotropy" << endl;
-          }
+	  if(v.size()>=16){
+	    // scaling for absorption anisotropy (old implementation)
+	    d.fr=v[15];
+	    cerr<<"Ice absorption anisotropy scaling is "<<d.fr<<endl;
+	  }
+	  else d.fr=1;
 
-          if(v.size()>=15){
-            // new absorption anisotropy
-            d.k1=exp(v[12]); d.k2=exp(v[13]); d.kz=exp(v[14]);
-            cerr<<"New Ice anisotropy is "<<d.k1<<","<<d.k2<<","<<d.kz<<endl;
-            if(d.k1>=d.k2 && d.k2==d.kz){
-              float r=d.k1/d.k2;
-              float s=sqrt(r*r-1);
-              r=(s>XXX?log(r+s)/s:1+s/2)/d.k2;
-              d.k1*=r, d.k2*=r, d.kz*=r;
-              cerr<<"Renorm. NI anisotropy "<<d.k1<<","<<d.k2<<","<<d.kz<<endl;
-            }
-            else{
-              cerr<<"Warning: taking absorption anisotropy as given (not renormalizing)!"<<endl;
-            }
+	  if(v.size()>=28){
+	    for(int i=0; i<12; i++) d.bfr[i]=v[16+i];
 
-          }
-          else d.k1=1, d.k2=1, d.kz=1;
+	    {
+	      char * BFRA=getenv("BFRA");
+	      float bfra=BFRA==NULL?1.0:atof(BFRA);
 
-          if(v.size()>=16){
-            // scaling for absorption anisotropy (old implementation)
-            d.fr=v[15];
-            cerr<<"Ice absorption anisotropy scaling is "<<d.fr<<endl;
-          }
-          else d.fr=1;
+	      char * BFRB=getenv("BFRB");
+	      float bfrb=BFRB==NULL?1.0:atof(BFRB);
 
+	      if(BFRA!=NULL || BFRB!=NULL) cerr<<"Setting BFRA="<<bfra<<" BFRB="<<bfrb<<endl;
+	      for(int i=0; i<12; i+=4) d.bfr[i]*=i<8?sqrt(bfra):bfra*bfrb;
+	    }
 
-          if(v.size()>=28){
-            for(int i=0; i<12; i++) d.bfr[i]=v[16+i];
-
-            {
-              char * BFRA=getenv("BFRA");
-              float bfra=BFRA==NULL?1.0:atof(BFRA);
-
-              char * BFRB=getenv("BFRB");
-              float bfrb=BFRB==NULL?1.0:atof(BFRB);
-
-              if(BFRA!=NULL || BFRB!=NULL) cerr<<"Setting BFRA="<<bfra<<" BFRB="<<bfrb<<endl;
-              for(int i=0; i<12; i+=4) d.bfr[i]*=i<8?sqrt(bfra):bfra*bfrb;
-            }
-
-            {
-              float step=0.01, sum=0;
-              for(float x=step/2; x<1; x+=step){
-                float y=sqrt(1-x*x);
-                float sx=max(0.f, d.bfr[0]*exp(-d.bfr[1]*pow(atan(d.bfr[3]*y), d.bfr[2])));
-                float sy=max(0.f, d.bfr[4]*exp(-d.bfr[5]*pow(atan(d.bfr[7]*y), d.bfr[6])));
-                float mx=max(0.f, d.bfr[8]*atan(d.bfr[11]*y*x)*exp(-d.bfr[9]*y+d.bfr[10]*x));
-                sum+=sx*sx+sy*sy+mx*mx;
-              }
-              sum*=step/2; d.sum=sum;
-            }
-            cerr<<"Initialized BFR diffusion patterns; s_eff="<<d.sum<<" m^-1"<<endl;
-          }
-          else{
-            d.sum=0;
-            for(int i=0; i<12; i++) d.bfr[i]=i%4<1?0:1;
-          }
+	    {
+	      float step=0.01, sum=0;
+	      for(float x=step/2; x<1; x+=step){
+		float y=sqrt(1-x*x);
+		float sx=max(0.f, d.bfr[0]*exp(-d.bfr[1]*pow(atan(d.bfr[3]*y), d.bfr[2])));
+		float sy=max(0.f, d.bfr[4]*exp(-d.bfr[5]*pow(atan(d.bfr[7]*y), d.bfr[6])));
+		float mx=max(0.f, d.bfr[8]*atan(d.bfr[11]*y*x)*exp(-d.bfr[9]*y+d.bfr[10]*x));
+		sum+=sx*sx+sy*sy+mx*mx;
 	      }
-        else { cerr<<"File cfg.txt did not contain valid data"<<endl; exit(1); }
-        inFile.close();
+	      sum*=step/2; d.sum=sum;
+	    }
+	    cerr<<"Initialized BFR diffusion patterns; s_eff="<<d.sum<<" m^-1"<<endl;
+	  }
+	  else{
+	    d.sum=0;
+	    for(int i=0; i<12; i++) d.bfr[i]=i%4<1?0:1;
+	  }
+	}
+	else{ cerr<<"File cfg.txt did not contain valid data"<<endl; exit(1); }
+	inFile.close();
       }
-      else { cerr<<"Could not open file cfg.txt"<<endl; exit(1); }
+      else{ cerr<<"Could not open file cfg.txt"<<endl; exit(1); }
     }
 
     {
       ifstream inFile((omdir+"om.conf").c_str(), ifstream::in);
       if(!inFile.fail()){
-        string in;
-          while(getline(inFile, in)){
-            int m; // module number type
-            unsigned int n; // number of pmts
-            itype t; // area thing (shoudl be 1 i think...)
-            float th, ph; // theta and phi of pmt 
-            float other; // cable degrees ?
-            int read=sscanf(in.c_str(), "%*s %d %f %f %f %f %d %f %f %f", &m, &t.area, &t.beta, &t.Rr, &t.Rz, &n, &th, &ph, &other);
-            t.cable=read>=9?other:0;
-            if(read>=8){
-              t.add(th, ph); 
-              for(unsigned int i=1; i<n && getline(inFile, in); i++)
-                if(2==sscanf(in.c_str(), "%f %f %f", &th, &ph, &other)) t.add(th, ph);
-              if(t.dirs.size()==n) types.insert(make_pair(m, t));
-            }
-          }
-        inFile.close();
+	string in;
+	while(getline(inFile, in)){
+	  int m;
+	  unsigned int n;
+	  itype t;
+	  float th, ph;
+	  float other;
+	  int read=sscanf(in.c_str(), "%*s %d %f %f %f %f %d %f %f %f", &m, &t.area, &t.beta, &t.Rr, &t.Rz, &n, &th, &ph, &other);
+	  t.cable=read>=9?other:0;
+	  if(read>=8){
+	    t.add(th, ph);
+	    for(unsigned int i=1; i<n && getline(inFile, in); i++)
+	      if(2==sscanf(in.c_str(), "%f %f %f", &th, &ph, &other)) t.add(th, ph);
+	    if(t.dirs.size()==n) types.insert(make_pair(m, t));
+	  }
+	}
+	inFile.close();
       }
 
-      if (!types.empty()) { //if no modules have bee ndeclraed
-        if(ico.ini(omdir+"om.dirs")<1){ cerr<<"Error: could not initialize an array of directions"<<endl; exit(1); } // if length of dirs of om.dirs  is less than 1 return error
-        nextgen=true; // using nextgendir
-        for(map<int, itype>::iterator j=types.begin(); j!=types.end(); ++j) {
-          j->second.fraq(); // calculate rde
-          cerr<<" OM Type "<<j->first<<" with "<<j->second.dirs.size()<<" PMTs added ("<<j->second.rde<<")"<<endl;
-	      }
+      if(!types.empty()){
+	if(ico.ini(omdir+"om.dirs")<1){ cerr<<"Error: could not initialize an array of directions"<<endl; exit(1); }
+	nextgen=true;
+	for(map<int, itype>::iterator j=types.begin(); j!=types.end(); ++j){
+	  j->second.fraq();
+	  cerr<<" OM Type "<<j->first<<" with "<<j->second.dirs.size()<<" PMTs added ("<<j->second.rde<<")"<<endl;
+	}
       }
     }
 
     if(types.find(-1)==types.end()){ // read angular sensitivity parameters
-    /// i think above -1 type is default so if default then use holeice
       types[-1].add(holeice);
     }
 
-    { //initialize random numbers:
+    { // initialize random numbers
       int size;
-      vector<unsigned int> rx; // rx is vector of random ints
+      vector<unsigned int> rx;
 
       ifstream inFile((ppcdir+"rnd.txt").c_str(), ifstream::in);
-
       if(!inFile.fail()){
-        string in;
-        while(getline(inFile, in)){
-          stringstream str(in);
-          unsigned int a;
-          if(str>>a) rx.push_back(a);
-        }
-        if(rx.size()<1){ cerr<<"File rnd.txt did not contain valid data"<<endl; exit(1); }
-        inFile.close();
+	string in;
+	while(getline(inFile, in)){
+	  stringstream str(in);
+	  unsigned int a;
+	  if(str>>a) rx.push_back(a);
+	}
+	if(rx.size()<1){ cerr<<"File rnd.txt did not contain valid data"<<endl; exit(1); }
+	inFile.close();
       }
-      
       else{ cerr<<"Could not open file rnd.txt"<<endl; exit(1); }
 
       size=rx.size();
       if(size>MAXRND){
-        cerr<<"Error: too many random multipliers ("<<size<<"), truncating to "<<MAXRND<<endl;
-        size=MAXRND;
+	cerr<<"Error: too many random multipliers ("<<size<<"), truncating to "<<MAXRND<<endl;
+	size=MAXRND;
       }
 
       cerr<<"Loaded "<<size<<" random multipliers"<<endl;
 
-      #ifndef DTMN
-            timeval tv; gettimeofday(&tv, NULL);
-            sv=1000000*(unsigned long long)tv.tv_sec+tv.tv_usec;
-      #endif
+#ifndef DTMN
+      timeval tv; gettimeofday(&tv, NULL);
+      sv=1000000*(unsigned long long)tv.tv_sec+tv.tv_usec;
+#endif
 
       d.rsize=size;
       for(int i=0; i<size; i++) z.rm[i]=rx[i];
@@ -810,235 +764,287 @@ struct ini {
     {
       ifstream inFile((ppcdir+"geo-f2k").c_str(), ifstream::in);
       if(!inFile.fail()){
-        if(!i3oms.empty()){
-          i3oms.clear();
-          cerr<<"Warning: overwriting existing geometry!"<<endl;
-        }
-        OM om;
-        string mbid;
-        unsigned long long omid;
-        while(inFile>>mbid>>hex>>omid>>dec>>om.r[0]>>om.r[1]>>om.r[2]>>om.str>>om.dom){
-          // first two columns of geo-f2k are throwaway
-          om.R=OMR, om.F=1;
-          om.r[2]+=zoff;
-          i3oms.push_back(om);
-        }
-        inFile.close();
+	if(!i3oms.empty()){
+	  i3oms.clear();
+	  cerr<<"Warning: overwriting existing geometry!"<<endl;
+	}
+	OM om;
+	string mbid;
+	unsigned long long omid;
+	while(inFile>>mbid>>hex>>omid>>dec>>om.r[0]>>om.r[1]>>om.r[2]>>om.str>>om.dom){
+	  om.R=OMR, om.F=1;
+	  om.r[2]+=zoff;
+	  i3oms.push_back(om);
+	}
+	inFile.close();
       }
     }
+    {
+      char * HIFL=getenv("HIFL");
+      float hifl=HIFL==NULL?0.f:atof(HIFL);
 
-
+      if(HIFL!=NULL) cerr<<"Setting HIFL="<<hifl<<" ns"<<endl;
+      d.hifl=hifl;
+    }
     {
       map<ikey, pair<float, float> > geco;
+
+      char * bmp=getenv("GECO");
+      if(bmp!=NULL){
+	ikey om;
+	float x, y, xH, hS;
+	int num=sscanf(bmp, "%d %d %f %f %f %f", &om.str, &om.dom, &x, &y, &xH, &hS);
+	if(num>=4){
+	  geco[om]=make_pair(OMR*x, OMR*y);
+	  cerr<<"Applying geometry correction to DOM "<<om.str<<","<<om.dom<<" of "<<x<<","<<y<<" x OMR ("<<(100*OMR)<<" cm)"<<endl;
+	}
+	if(num>=5){
+	  d.hr=OMR*xH; d.hr2=d.hr*d.hr;
+	  cerr<<"Updating hole ice parameters: xH="<<xH<<endl;
+	}
+	if(num>=6){
+	  d.hs=1/(hS*(1-d.G));
+	  cerr<<"Updating hole ice parameters: sca="<<hS<<endl;
+	}
+      }
+
       for(vector<OM>::iterator i=i3oms.begin(); i!=i3oms.end(); ++i){
-        map<ikey, pair<float, float> >::iterator j=geco.find(*i);
-        if(j!=geco.end()){
-          pair<float, float>& gc = j->second;
-          i->r[0]+=gc.first, i->r[1]+=gc.second;
-        }
+	map<ikey, pair<float, float> >::iterator j=geco.find(*i);
+	if(j!=geco.end()){
+	  pair<float, float>& gc = j->second;
+	  i->r[0]+=gc.first, i->r[1]+=gc.second;
+	}
       }
     }
+    {
+      ifstream inFile((ppcdir+"str-f2k").c_str(), ifstream::in);
+      if(!inFile.fail()){
+	cerr<<"Using fixed positions of hole ice columns from str-f2k!"<<endl;
 
-    // {
-    //   ifstream inFile((ppcdir+"str-f2k").c_str(), ifstream::in);
-    //   if(!inFile.fail()){
-    //     cerr<<"Using fixed positions of hole ice columns from str-f2k!"<<endl;
-
-    //     int str;
-    //     float x, y;
-    //     while(inFile>>str>>x>>y) strs[str]=make_pair(x, y);
-    //     inFile.close();
-    //   }
-    
-    // }
-
+	int str;
+	float x, y;
+	while(inFile>>str>>x>>y) strs[str]=make_pair(x, y);
+	inFile.close();
+      }
+    }
     {
       ifstream inFile((ppcdir+"eff-f2k").c_str(), ifstream::in);
       if(!inFile.fail()){
-        if(!rdes.empty()){
-          rdes.clear();
-          cerr<<"Warning: overwriting existing RDE table!"<<endl;
-        }
-        int typ;
-        ikey om;
-        float eff;
+	if(!rdes.empty()){
+	  rdes.clear();
+	  cerr<<"Warning: overwriting existing RDE table!"<<endl;
+	}
+	int typ;
+	ikey om;
+	float eff;
 
-        string in;
-        while(getline(inFile, in)){
-          int num=sscanf(in.c_str(), "%d %d %f %d", &om.str, &om.dom, &eff, &typ);
-          if(num<4) typ=0;
-          if(num>=3) if(om.isinice()) rdes.insert(make_pair(om, make_pair(eff, typ)));
-        }
-        inFile.close();
+	string in;
+	while(getline(inFile, in)){
+	  int num=sscanf(in.c_str(), "%d %d %f %d", &om.str, &om.dom, &eff, &typ);
+	  if(num<4) typ=0;
+	  if(num>=3) if(om.isinice()) rdes.insert(make_pair(om, make_pair(eff, typ)));
+	}
+
+	inFile.close();
+      }
+    }
+    {
+      ifstream inFile((omdir+"om.map").c_str(), ifstream::in);
+      if(!inFile.fail()){
+	if(!omts.empty()){
+	  omts.clear();
+	  cerr<<"Warning: overwriting existing OM type table!"<<endl;
+	}
+	ikey om;
+	int m;
+	while(inFile>>om.str>>om.dom>>m) if(om.isinice()) omts.insert(make_pair(om, m));
+	inFile.close();
+      }
+    }
+    {
+      ifstream inFile((ppcdir+"hvs-f2k").c_str(), ifstream::in);
+      if(!inFile.fail()){
+	if(!hvs.empty()){
+	  hvs.clear();
+	  cerr<<"Warning: overwriting existing HV table!"<<endl;
+	}
+	ikey om;
+	float hv;
+	while(inFile>>om.str>>om.dom>>hv) if(om.isinice()) hvs.insert(make_pair(om, hv));
+	inFile.close();
       }
     }
 
     {
-      ifstream inFile((omdir+"om.map").c_str(), ifstream::in);
+      ifstream inFile((ppcdir+"cx.dat").c_str(), ifstream::in);
       if(!inFile.fail()){
-        if(!omts.empty()){
-          omts.clear();
-          cerr<<"Warning: overwriting existing OM type table!"<<endl;
-        }
-        ikey om;
-        int m;
-        while(inFile>>om.str>>om.dom>>m) if(om.isinice()) omts.insert(make_pair(om, m));
-        inFile.close();
+	ikey om;
+	V<3> dir;
+	float r;
+	while(inFile >> om.str >> om.dom >> dir[0] >> dir[1] >> dir[2] >> r) cx[om]=dir;
+	if(cx.size()>0) cerr<<"Loaded "<<cx.size()<<" DOM orientations"<<endl;
+	else{ cerr<<"File cx.dat did not contain valid data"<<endl; exit(1); }
+	inFile.close();
+      }
+    }
+    {
+      ifstream inFile((ppcdir+"dx.dat").c_str(), ifstream::in);
+      if(!inFile.fail()){
+	ikey om;
+	float dir;
+	float r;
+	while(inFile >> om.str >> om.dom >> dir >> r){
+	  while(dir<0) dir+=360.f; // negative value means unset
+	  dx[om]=dir;
+	}
+	if(dx.size()>0) cerr<<"Loaded "<<dx.size()<<" cable positions"<<endl;
+	else{ cerr<<"File dx.dat did not contain valid data"<<endl; exit(1); }
+	inFile.close();
       }
     }
 
-    //omitting  hvs-f2k, cx.dat, dx.dat because i dont want to 
-
     float Rr=0, Rz=0;
 
-    { // initialize geo
+    { // initialize geometry
       vector<DOM> oms;
       vector<name> names;
-      int nhqe = 0;
+      int nhqe=0;
 
       sort(i3oms.begin(), i3oms.end());
       for(vector<OM>::iterator i=i3oms.begin(); i!=i3oms.end(); ++i) if(i->isinice()){
-        ikey om(*i);
+	ikey om(*i);
 
-        int m, t;
-        float r, h;
-        V<3> tilt;
-        float azi = -1.f;
+	int m, t;
+	float r, h;
+	V<3> tilt;
+	float azi = -1.f;
 
-        if(omts.empty()) m=-1;
-        else{
-          map<ikey, int>::iterator j=omts.find(om);
-          m=j==omts.end()?-1:j->second;
-          map<int, itype>::const_iterator it=types.find(m);
-          if(it==types.end()) m=-1;
+	if(omts.empty()) m=-1;
+	else{
+	  map<ikey, int>::iterator j=omts.find(om);
+	  m=j==omts.end()?-1:j->second;
+	  map<int, itype>::const_iterator it=types.find(m);
+	  if(it==types.end()) m=-1;
 
-          it=types.find(m);
-          if(it!=types.end()){
-            const itype & t=it->second;
-            i->R=t.Rr, i->F=t.Rz/t.Rr;
-          }
-        }
+	  it=types.find(m);
+	  if(it!=types.end()){
+	    const itype & t=it->second;
+	    i->R=t.Rr, i->F=t.Rz/t.Rr;
+	  }
+	}
 
-        Rr=max(Rr, i->R), Rz=max(Rz, i->R*fabs(i->F));
+	Rr=max(Rr, i->R), Rz=max(Rz, i->R*fabs(i->F));
+	oms.push_back(*i);
 
+	{
+	  map<ikey, pair<float, int> >::iterator j=rdes.find(om);
+	  if(j!=rdes.end()){
+	    nhqe++;
+	    r=j->second.first;
+	    t=j->second.second;
+	  }
+	  else r=1, t=0;
 
-        oms.push_back(*i);
+	  irdes[make_pair(m,t)].addr(r);
+	}
 
-        {
-          map<ikey, pair<float, int> >::iterator j=rdes.find(om);
-          if(j!=rdes.end()){
-            nhqe++;
-            r=j->second.first;
-            t=j->second.second;
-          }
-          else r=1, t=0;
+	if(hvs.empty()) h=1200;
+	else{
+	  map<ikey, float>::iterator j=hvs.find(om);
+	  h=j==hvs.end()?0:j->second;
+	}
 
-          irdes[make_pair(m,t)].addr(r);
-        }
+	{
+	  map<ikey, V<3> >::iterator ci=cx.find(om);
+	  if(ci!=cx.end()) tilt=ci->second;
 
-        if(hvs.empty()) h=1200;
-        else{
-          map<ikey, float>::iterator j=hvs.find(om);
-          h=j==hvs.end()?0:j->second;
-        }
+	  map<ikey, float >::iterator di=dx.find(om);
+	  if(di!=dx.end()) azi = di->second;
+	}
 
-
-        {
-          map<ikey, V<3> >::iterator ci=cx.find(om);
-          if(ci!=cx.end()) tilt=ci->second;
-
-          map<ikey, float >::iterator di=dx.find(om);
-          if(di!=dx.end()) azi = di->second;
-        }
-
-	      names.push_back(name(om, m, t, r, h, tilt, azi));
+	names.push_back(name(om, m, t, r, h, tilt, azi));
       }
-
       if(nhqe>0) cerr<<"Loaded "<<nhqe<<" RDE coefficients"<<endl;
       for(map<pair<int,int>, irde>::const_iterator i=irdes.begin(); i!=irdes.end(); ++i)
-	    cerr<<" Found "<<i->second.oms<<" OMs of type "<<i->first.first<<","<<i->first.second<<endl;
+	cerr<<" Found "<<i->second.oms<<" OMs of type "<<i->first.first<<","<<i->first.second<<endl;
 
       int gsize = oms.size();
       if(gsize>MAXGEO){
-        cerr<<"Error: too many OMs ("<<gsize<<"), truncating to "<<MAXGEO<<endl;
-        gsize=MAXGEO;
+	cerr<<"Error: too many OMs ("<<gsize<<"), truncating to "<<MAXGEO<<endl;
+	gsize=MAXGEO;
       }
 
       for(int n=0; n<gsize; n++){ q.oms[n]=oms[n]; q.names[n]=names[n]; }
 
       d.gsize=gsize;
-
     }
 
     Rr*=d.xR, Rz*=d.xR;
-
 
     map<unsigned short, short> num;
     {
       map<unsigned short, float> l;
       map<unsigned short, line> sc;
       for(int n=0; n<d.gsize; n++){
-        // iterates over number of OMs
-        unsigned short str=sname(n);
-        line & s = sc[str];
-        DOM & om = q.oms[n];
-        if(num.find(str)==num.end()){
-          l[str]=om.r[2];
-          s.h=om.r[2];
-          s.n=n;
-        }
-        else{
-          if(l[str]>om.r[2]) l[str]=om.r[2];
-          if(s.h<om.r[2]) s.h=om.r[2];
-          if(s.n>n) s.n=n;
-        }
-	      num[str]++; s.x+=om.r[0], s.y+=om.r[1];
+	unsigned short str=sname(n);
+	line & s = sc[str];
+	DOM & om = q.oms[n];
+	if(num.find(str)==num.end()){
+	  l[str]=om.r[2];
+	  s.h=om.r[2];
+	  s.n=n;
+	}
+	else{
+	  if(l[str]>om.r[2]) l[str]=om.r[2];
+	  if(s.h<om.r[2]) s.h=om.r[2];
+	  if(s.n>n) s.n=n;
+	}
+	num[str]++; s.x+=om.r[0], s.y+=om.r[1];
       }
       if(sc.size()>NSTR){ cerr<<"Number of strings exceeds capacity of "<<NSTR<<endl; exit(1); }
 
       for(map<unsigned short, short>::iterator i=num.begin(); i!=num.end(); ++i){
-        unsigned short str=i->first, n=i->second;
-        line & s = sc[str];
-        float d=s.h-l[str];
-        if(n>1 && d<=0){ cerr<<"Cannot estimate the spacing along string "<<(int)str<<endl; exit(1); }
-        s.x/=n, s.y/=n, s.r=0; s.d=n>1?(n-1)/d:0; s.dl=0; s.dh=0;
+	unsigned short str=i->first, n=i->second;
+	line & s = sc[str];
+	float d=s.h-l[str];
+	if(n>1 && d<=0){ cerr<<"Cannot estimate the spacing along string "<<(int)str<<endl; exit(1); }
+	s.x/=n, s.y/=n, s.r=0; s.d=n>1?(n-1)/d:0; s.dl=0; s.dh=0;
 
-        map<int, pair<float, float> >::iterator j=strs.find(str);
-        if(j!=strs.end()) s.x=j->second.first, s.y=j->second.second;
+	map<int, pair<float, float> >::iterator j=strs.find(str);
+	if(j!=strs.end()) s.x=j->second.first, s.y=j->second.second;
       }
-    
+
       for(int n=0; n<d.gsize; n++){
-        unsigned short str=sname(n);
-        line & s = sc[str];
-        DOM & om = q.oms[n];
+	unsigned short str=sname(n);
+	line & s = sc[str];
+	DOM & om = q.oms[n];
 
-        float dx=s.x-om.r[0], dy=s.y-om.r[1];
-        float dr=dx*dx+dy*dy; if(dr>s.r) s.r=dr;
+	float dx=s.x-om.r[0], dy=s.y-om.r[1];
+	float dr=dx*dx+dy*dy; if(dr>s.r) s.r=dr;
 
-        if(s.d>0){
-          float dz=om.r[2]-(s.h+(s.n-n)/s.d);
-          if(s.dl>dz) s.dl=dz; if(s.dh<dz) s.dh=dz;
-        }
+	if(s.d>0){
+	  float dz=om.r[2]-(s.h+(s.n-n)/s.d);
+	  if(s.dl>dz) s.dl=dz; if(s.dh<dz) s.dh=dz;
+	}
       }
 
       d.rx=0;
       int n=0;
       for(map<unsigned short, short>::iterator i=num.begin(); i!=num.end(); ++i, n++){
-        unsigned short str=i->first;
-        line & s = sc[str];
-        s.max=i->second-1;
-        i->second=n;
-        s.r=Rr+sqrt(s.r);
-        if(d.hr>s.r) s.r=d.hr;
-        if(d.rx<s.r) d.rx=s.r;
-        s.dl-=Rz, s.dh+=Rz;
-        d.sc[n]=s;
+	unsigned short str=i->first;
+	line & s = sc[str];
+	s.max=i->second-1;
+	i->second=n;
+	s.r=Rr+sqrt(s.r);
+	if(d.hr>s.r) s.r=d.hr;
+	if(d.rx<s.r) d.rx=s.r;
+	s.dl-=Rz, s.dh+=Rz;
+	d.sc[n]=s;
       }
     }
 
     float sin12=0;
     {
-      // ice anisotropy or something?
       float bv[2][2];
       bv[0][0]=cos(fcv*DIR1);
       bv[0][1]=sin(fcv*DIR1);
@@ -1057,225 +1063,220 @@ struct ini {
       d.rx/=sin12;
     }
 
-        map<unsigned short, int> cells[CX][CY];
+    map<unsigned short, int> cells[CX][CY];
     {
       float cl[2]={0,0}, ch[2]={0,0}, crst[2];
 
       int n=0;
       for(map<unsigned short, short>::iterator i=num.begin(); i!=num.end(); ++i, n++){
-        line & s = d.sc[i->second];
-        for(int m=0; m<2; m++){
-          if(n==0 || ctr(s, m)<cl[m]) cl[m]=ctr(s, m);
-          if(n==0 || ctr(s, m)>ch[m]) ch[m]=ctr(s, m);
-        }
+	line & s = d.sc[i->second];
+	for(int m=0; m<2; m++){
+	  if(n==0 || ctr(s, m)<cl[m]) cl[m]=ctr(s, m);
+	  if(n==0 || ctr(s, m)>ch[m]) ch[m]=ctr(s, m);
+	}
       }
 
       d.cn[0]=CX;
       d.cn[1]=CY;
 
       for(int m=0; m<2; m++){
-        float diff=ch[m]-cl[m];
-        d.cn[m]=min(d.cn[m], 1+2*(int)lroundf(diff/125));
+	float diff=ch[m]-cl[m];
+	d.cn[m]=min(d.cn[m], 1+2*(int)lroundf(diff/125));
 
-        if(d.cn[m]<=1){
-          ch[m]=cl[m]=(cl[m]+ch[m])/2;
-          crst[m]=1/(d.rx*(2+XXX)+diff);
-        }
-        else{
-          float s=Rr*(d.cn[m]-1);
-          if(diff<2*s){
-            cerr<<"Warning: tight string packing in direction "<<(m<1?"x":"y")<<endl;
-            float ave=(cl[m]+ch[m])/2;
-            cl[m]=ave-s; ch[m]=ave+s; diff=2*s;
-          }
-          crst[m]=(d.cn[m]-1)/diff;
-        }
+	if(d.cn[m]<=1){
+	  ch[m]=cl[m]=(cl[m]+ch[m])/2;
+	  crst[m]=1/(d.rx*(2+XXX)+diff);
+	}
+	else{
+	  float s=Rr*(d.cn[m]-1);
+	  if(diff<2*s){
+	    cerr<<"Warning: tight string packing in direction "<<(m<1?"x":"y")<<endl;
+	    float ave=(cl[m]+ch[m])/2;
+	    cl[m]=ave-s; ch[m]=ave+s; diff=2*s;
+	  }
+	  crst[m]=(d.cn[m]-1)/diff;
+	}
       }
 
       bool flag=true;
       for(map<unsigned short, short>::iterator i=num.begin(); i!=num.end(); ++i){
-        line & s = d.sc[i->second];
-        int n[2];
-        for(int m=0; m<2; m++){
-          n[m]=lroundf((ctr(s, m)-cl[m])*crst[m]);
-          if(n[m]<0 && n[m]>=d.cn[m]){ cerr<<"Error in cell initialization"<<endl; exit(1); }
+	line & s = d.sc[i->second];
+	int n[2];
+	for(int m=0; m<2; m++){
+	  n[m]=lroundf((ctr(s, m)-cl[m])*crst[m]);
+	  if(n[m]<0 && n[m]>=d.cn[m]){ cerr<<"Error in cell initialization"<<endl; exit(1); }
 
-          float d1=fabs(ctr(s, m)-(cl[m]+(n[m]-0.5f)/crst[m]));
-          float d2=fabs(ctr(s, m)-(cl[m]+(n[m]+0.5f)/crst[m]));
-          float d=min(d1, d2)*sin12-s.r;
-          if(d<0){ flag=false; cerr<<"Warning: string "<<(int)i->first<<" too close to cell boundary"<<endl; }
-        }
+	  float d1=fabs(ctr(s, m)-(cl[m]+(n[m]-0.5f)/crst[m]));
+	  float d2=fabs(ctr(s, m)-(cl[m]+(n[m]+0.5f)/crst[m]));
+	  float d=min(d1, d2)*sin12-s.r;
+	  if(d<0){ flag=false; cerr<<"Warning: string "<<(int)i->first<<" too close to cell boundary"<<endl; }
+	}
 
-	      cells[n[0]][n[1]][i->first]++;
+	cells[n[0]][n[1]][i->first]++;
       }
       if(flag) d.rx=0;
 
       for(int m=0; m<2; m++){ d.cl[m]=cl[m]; d.crst[m]=crst[m]; }
     }
 
-
     {
       unsigned int pos=0;
       for(int i=0; i<d.cn[0]; i++) for(int j=0; j<d.cn[1]; j++){
-        map<unsigned short, int> & c = cells[i][j];
+	map<unsigned short, int> & c = cells[i][j];
 
-        if(c.size()>0){
-          d.is[i][j]=pos;
-          for(map<unsigned short, int>::const_iterator n=c.begin(); n!=c.end(); ++n){
-            if(pos==NSTR){ cerr<<"Number of string cells exceeds capacity of "<<NSTR<<endl; exit(1); }
-            d.ls[pos++]=num[n->first];
-          }
-          d.ls[pos-1]|=0x8000;
-        }
-        else d.is[i][j]=0x8000;
-        }
+	if(c.size()>0){
+	  d.is[i][j]=pos;
+	  for(map<unsigned short, int>::const_iterator n=c.begin(); n!=c.end(); ++n){
+	    if(pos==NSTR){ cerr<<"Number of string cells exceeds capacity of "<<NSTR<<endl; exit(1); }
+	    d.ls[pos++]=num[n->first];
+	  }
+	  d.ls[pos-1]|=0x8000;
+	}
+	else d.is[i][j]=0x8000;
+      }
     }
 
     cerr<<"Loaded "<<d.gsize<<" DOMs ("<<d.cn[0]<<"x"<<d.cn[1]<<")"<<endl;
 
     d.tmod=0;
 
-    { //initalize a 2d ice layer tilt
+    { // initialize 2d ice layer tilt
       ifstream inFile((tiltdir+"tilt.set").c_str(), ifstream::in);
-      if(!inFile.fail()) {
-        float mdir[2];
-        int n=0;
-        string in;
-        while(getline(inFile, in)){
-          int tot=sscanf(in.c_str(), "%f %f %f %d %d", &mdir[n], &d.mmin[n], &d.mstp[n], &d.mnum[n], &d.mcut[n]);
-          if(tot==5) n++; if(n>=2) break;
-        }
-        inFile.close();
-        if(n<2){ cerr << "File tilt.set found, but is corrupt" << endl; exit(1); }
+      if(!inFile.fail()){
+	float mdir[2];
+	int n=0;
+	string in;
+	while(getline(inFile, in)){
+	  int tot=sscanf(in.c_str(), "%f %f %f %d %d", &mdir[n], &d.mmin[n], &d.mstp[n], &d.mnum[n], &d.mcut[n]);
+	  if(tot==5) n++; if(n>=2) break;
+	}
+	inFile.close();
+	if(n<2){ cerr << "File tilt.set found, but is corrupt" << endl; exit(1); }
 
-        if(mdir[0]!=DIR1 || mdir[1]!=DIR2){ cerr << "Unsupported tilt grid configuration" << endl; exit(1); }
-        
-        int size=0;
-        for(int j=0; j<d.mnum[1]; j++) for(int i=0; i<d.mnum[0]; i++) if(i<j+d.mcut[0] && j<i+d.mcut[1]) size++;
-        if(size>LMAX){ cerr << "File tilt.set defines too many dust maps" << endl; exit(1); }
-        if(d.mnum[0]>CTX || d.mnum[1]>CTY){ cerr<<"Error: tilt map conifguration exceeds buffer"<<endl; exit(1); }
-        if(d.mstp[0]<=0 || d.mstp[1]<=0){ cerr << "Tilt map does not use increasing range order" << endl; exit(1); }
+	if(mdir[0]!=DIR1 || mdir[1]!=DIR2){ cerr << "Unsupported tilt grid configuration" << endl; exit(1); }
 
+	int size=0;
+	for(int j=0; j<d.mnum[1]; j++) for(int i=0; i<d.mnum[0]; i++) if(i<j+d.mcut[0] && j<i+d.mcut[1]) size++;
+	if(size>LMAX){ cerr << "File tilt.set defines too many dust maps" << endl; exit(1); }
+	if(d.mnum[0]>CTX || d.mnum[1]>CTY){ cerr<<"Error: tilt map conifguration exceeds buffer"<<endl; exit(1); }
+	if(d.mstp[0]<=0 || d.mstp[1]<=0){ cerr << "Tilt map does not use increasing range order" << endl; exit(1); }
 
-        for(int m=0, j=0; j<d.mnum[1]; j++) for(int i=0; i<d.mnum[0]; i++){
-          if(i<j+d.mcut[0] && j<i+d.mcut[1]) d.mcol[i][j]=m++;
-          else d.mcol[i][j]=-1;
-        }
+	for(int m=0, j=0; j<d.mnum[1]; j++) for(int i=0; i<d.mnum[0]; i++){
+	    if(i<j+d.mcut[0] && j<i+d.mcut[1]) d.mcol[i][j]=m++;
+	    else d.mcol[i][j]=-1;
+	  }
 
-        ifstream inFile((tiltdir+"tilt.map").c_str(), ifstream::in);
+	ifstream inFile((tiltdir+"tilt.map").c_str(), ifstream::in);
+	if(!inFile.fail()){
+	  d.lnum=size;
+	  vector<float> pts(d.lnum), ds;
+	  vector<float> lp[d.lnum];
 
-        if(!inFile.fail()) {
-          d.lnum=size;
-          vector<float> pts(d.lnum), ds;
-          vector<float> lp[d.lnum];
-        
+	  while(getline(inFile, in)){
+	    stringstream str(in);
+	    float depth;
+	    while(str >> depth){
+	      int i=0;
+	      while(str >> pts[i++]) if(i>=d.lnum) break;
+	      if(i!=d.lnum) break;
+	      ds.push_back(depth);
+	      for(i=0; i<d.lnum; i++) lp[i].push_back(pts[i]);
+	    }
+	  }
+	  inFile.close();
 
-        while(getline(inFile, in)) {
-          stringstream str(in);
-          float depth;
-          while(str >> depth){
-            int i=0;
-            while(str >> pts[i++]) if(i>=d.lnum) break;
-            if(i!=d.lnum) break;
-            ds.push_back(depth);
-            for(i=0; i<d.lnum; i++) lp[i].push_back(pts[i]);
-          }
-        }
-        inFile.close();
+	  int size=ds.size();
+	  if(size-1>LYRS){ cerr << "File tilt.map defines too many map points" << endl; exit(1); }
+	  for(int i=1; i<size; i++) if(ds[i]<ds[i-1]){ cerr << "Tilt map does not use increasing depth order" << endl; exit(1); }
+	  for(int i=0; i<d.lnum; i++) for(int j=0; j<size-1; j++){
+	      z.lp[i][j].x=lp[i][size-1-j]; z.lp[i][j].y=lp[i][size-2-j]-lp[i][size-1-j];
+	    }
+	  d.lpts=size-2;
 
-        int size=ds.size();
-	      if(size-1>LYRS){ cerr << "File tilt.map defines too many map points" << endl; exit(1); }
-	      for(int i=1; i<size; i++) if(ds[i]<ds[i-1]){ cerr << "Tilt map does not use increasing depth order" << endl; exit(1); }
-        for(int i=0; i<d.lnum; i++) for(int j=0; j<size-1; j++){
-            z.lp[i][j].x=lp[i][size-1-j]; z.lp[i][j].y=lp[i][size-2-j]-lp[i][size-1-j];
-        }
-        d.lpts=size-2;
+	  if(size<2) d.lnum=0;
+	  else{
+	    float lmin=ds[0], lmax=ds[size-1];
+	    d.lmin=zoff-lmax; d.lrdz=(size-1)/(lmax-lmin);
+	  }
 
-        if(size<2) d.lnum=0;
-        else {
-          float lmin=ds[0], lmax=ds[size-1];
-          d.lmin=zoff-lmax; d.lrdz=(size-1)/(lmax-lmin);
-        }
-
-        if(d.lnum>0) {
-          d.tmod=2;
-          cerr<<"Loaded "<<d.lnum<<"x"<<size<<" 2d dust layer points"<<endl;
-        }
-      }
-    }
-  }
-
-  if(d.lnum<=0){ // initialize 1d ice layer tilt
-    d.lnum=0; d.l0=0, d.r0=0;
-    const float thx=225;
-    d.lnx=cos(fcv*thx), d.lny=sin(fcv*thx);
-
-    ifstream inFile((tiltdir+"tilt.par").c_str(), ifstream::in);
-    if(!inFile.fail()){
-      int str;
-      float aux;
-      vector<float> lr;
-      while(inFile >> str >> aux){ if(aux==0) d.l0=str; lr.push_back(aux); }
-      inFile.close();
-
-        int size=lr.size();
-        if(size>LMAX){ cerr << "File tilt.par defines too many dust maps" << endl; exit(1); }
-        for(int i=1; i<size; i++) if(lr[i]<lr[i-1]){ cerr << "Tilt map does not use increasing range order" << endl; exit(1); }
-        for(int i=0; i<size; i++) d.lr[i]=lr[i];
-
-        string in;
-        ifstream inFile((tiltdir+"tilt.dat").c_str(), ifstream::in);
-        if(!inFile.fail()){
-          d.lnum=size;
-          vector<float> pts(d.lnum), ds;
-          vector<float> lp[d.lnum];
-
-          while(getline(inFile, in)){
-            stringstream str(in);
-            float depth;
-            while(str >> depth){
-              int i=0;
-              while(str >> pts[i++]) if(i>=d.lnum) break;
-              if(i!=d.lnum) break;
-              ds.push_back(depth);
-              for(i=0; i<d.lnum; i++) lp[i].push_back(pts[i]);
-            }
-          }
-	        inFile.close();
-
-          int size=ds.size();
-          if(size-1>LYRS){ cerr << "File tilt.dat defines too many map points" << endl; exit(1); }
-          for(int i=1; i<size; i++) if(ds[i]<ds[i-1]){ cerr << "Tilt map does not use increasing depth order" << endl; exit(1); }
-          for(int i=0; i<d.lnum; i++) for(int j=0; j<size-1; j++){
-              z.lp[i][j].x=lp[i][size-1-j]; z.lp[i][j].y=lp[i][size-2-j]-lp[i][size-1-j];
-            }
-          d.lpts=size-2;
-
-          if(size<2) d.lnum=0;
-          else{
-            float lmin=ds[0], lmax=ds[size-1];
-            d.lmin=zoff-lmax; d.lrdz=(size-1)/(lmax-lmin);
-          }
-
-          if(d.lnum>0){
-            d.tmod=1;
-            cerr<<"Loaded "<<d.lnum<<"x"<<size<<" dust layer points"<<endl;
-          }
-	      }
+	  if(d.lnum>0){
+	    d.tmod=2;
+	    cerr<<"Loaded "<<d.lnum<<"x"<<size<<" 2d dust layer points"<<endl;
+	  }
+	}
       }
     }
 
+    if(d.lnum<=0){ // initialize 1d ice layer tilt
+      d.lnum=0; d.l0=0, d.r0=0;
+      const float thx=225;
+      d.lnx=cos(fcv*thx), d.lny=sin(fcv*thx);
+
+      ifstream inFile((tiltdir+"tilt.par").c_str(), ifstream::in);
+      if(!inFile.fail()){
+	int str;
+	float aux;
+	vector<float> lr;
+	while(inFile >> str >> aux){ if(aux==0) d.l0=str; lr.push_back(aux); }
+	inFile.close();
+
+	int size=lr.size();
+	if(size>LMAX){ cerr << "File tilt.par defines too many dust maps" << endl; exit(1); }
+	for(int i=1; i<size; i++) if(lr[i]<lr[i-1]){ cerr << "Tilt map does not use increasing range order" << endl; exit(1); }
+	for(int i=0; i<size; i++) d.lr[i]=lr[i];
+
+	string in;
+	ifstream inFile((tiltdir+"tilt.dat").c_str(), ifstream::in);
+	if(!inFile.fail()){
+	  d.lnum=size;
+	  vector<float> pts(d.lnum), ds;
+	  vector<float> lp[d.lnum];
+
+	  while(getline(inFile, in)){
+	    stringstream str(in);
+	    float depth;
+	    while(str >> depth){
+	      int i=0;
+	      while(str >> pts[i++]) if(i>=d.lnum) break;
+	      if(i!=d.lnum) break;
+	      ds.push_back(depth);
+	      for(i=0; i<d.lnum; i++) lp[i].push_back(pts[i]);
+	    }
+	  }
+	  inFile.close();
+
+	  int size=ds.size();
+	  if(size-1>LYRS){ cerr << "File tilt.dat defines too many map points" << endl; exit(1); }
+	  for(int i=1; i<size; i++) if(ds[i]<ds[i-1]){ cerr << "Tilt map does not use increasing depth order" << endl; exit(1); }
+	  for(int i=0; i<d.lnum; i++) for(int j=0; j<size-1; j++){
+	      z.lp[i][j].x=lp[i][size-1-j]; z.lp[i][j].y=lp[i][size-2-j]-lp[i][size-1-j];
+	    }
+	  d.lpts=size-2;
+
+	  if(size<2) d.lnum=0;
+	  else{
+	    float lmin=ds[0], lmax=ds[size-1];
+	    d.lmin=zoff-lmax; d.lrdz=(size-1)/(lmax-lmin);
+	  }
+
+	  if(d.lnum>0){
+	    d.tmod=1;
+	    cerr<<"Loaded "<<d.lnum<<"x"<<size<<" dust layer points"<<endl;
+	  }
+	}
+      }
+    }
 
     { // should follow both tilt and geometry initializations
       int nr=0;
       float r0=0;
       for(int n=0; n<d.gsize; n++){
-        int str=q.names[n].str;
-        if(str==d.l0){
-          nr++;
-          DOM & om = q.oms[n];
-          r0+=d.lnx*om.r[0]+d.lny*om.r[1];
-        }
+	int str=q.names[n].str;
+	if(str==d.l0){
+	  nr++;
+	  DOM & om = q.oms[n];
+	  r0+=d.lnx*om.r[0]+d.lny*om.r[1];
+	}
       }
       if(nr>0) d.r0=r0/nr;
     }
@@ -1286,374 +1287,356 @@ struct ini {
       cerr<<"Ice layer thickness: ";
       switch(d.vthk){
       case 0:
-        cerr<<"UNIFORM";
-        break;
+	cerr<<"UNIFORM";
+	break;
       case 1:
-        cerr<<"TILT-CORRECTED";
-        break;
+	cerr<<"TILT-CORRECTED";
+	break;
       default:
-        cerr<<"UNKNOWN";
+	cerr<<"UNKNOWN";
       }
       cerr<<endl;
     }
 
-
-    {
-      // MAIN INITALIZATION OF ICE AND WAVELENGTHS
-      // keeping it simple as possible
-
-      //ice paramters:
-      int size; // size of kurt table
-      int dh, rdh, hmin; // step, 1/step, and min depth
+    { // initialize ice parameters
+      int size;            // size of kurt table
+      float dh, rdh, hmin; // step, 1/step, and min depth
 
       {
-        vector<float> wx, wy, wz;
-        bool flag=true, rdef =false;
-        // flasher:
-        char * WFLA=getenv("WFLA");
-        float wfla=WFLA==NULL?0:atof(WFLA);
-        if(wfla>0){
-          for(float x=0.f; x<1.f+XXX; x+=0.1f){
-            wx.push_back(3*x*x-2*x*x*x);
-            wy.push_back(wfla+10.f*(2*x-1)); // +- 10 nm smoothstep
-          }
-          cerr<<"Using single wavelength="<<wfla<<" [nm]"<<endl;
-          qwv.ssw(wfla);
-        } 
-        else{
-          // loading wv.dat for default doms
-          string flwl("dat");
-          {
-            char * env=getenv("FLWL");
-            if(env!=NULL){
-              flwl=string(env);
-              cerr<<"wv.dat file extension is modified with FLWL="<<flwl<<endl;
-            }
-          }
+	vector<float> wx, wy, wz;
+	bool flag=true, rdef=false;
 
-          flwl="wv."+flwl;
-          ifstream inFile((ppcdir+flwl).c_str(), ifstream::in);
-          if(!inFile.fail()){
-            int num=0;
-            float xa, ya, xo=0, yo=0;
-            while(inFile>>xa>>ya){
-              if(( xa<0 || 1<xa ) || (num==0 && xa!=0) || (num>0 && ( xa<=xo || ya<=yo ))){ flag=false; break; }
-              wx.push_back(xa); wy.push_back(ya);
-              xo=xa; yo=ya; num++;
-            }
-            if(xo!=1 || wx.size()<2) flag=false;
-            inFile.close();
-            if(flag){ cerr<<"Loaded "<<wx.size()<<" wavelenth points"<<endl; }
-            else{ cerr<<"File "<<flwl<<" did not contain valid data"<<endl; exit(1); }
-          }
-          else{ cerr<<"Could not open file "<<flwl<<endl; exit(1); }
-        }
+	char * WFLA=getenv("WFLA");
+	float wfla=WFLA==NULL?0:atof(WFLA);
+	if(wfla>0){
+	  for(float x=0.f; x<1.f+XXX; x+=0.1f){
+	    wx.push_back(3*x*x-2*x*x*x);
+	    wy.push_back(wfla+10.f*(2*x-1)); // +- 10 nm smoothstep
+	  }
+	  cerr<<"Using single wavelength="<<wfla<<" [nm]"<<endl;
+	  qwv.ssw(wfla);
+	}
+	else{
+	  string flwl("dat");
+	  {
+	    char * env=getenv("FLWL");
+	    if(env!=NULL){
+	      flwl=string(env);
+	      cerr<<"wv.dat file extension is modified with FLWL="<<flwl<<endl;
+	    }
+	  }
 
-        if(flag){
-          // if valid wv.dat go looking for wv.rde
-          vector<float> qx, qy;
+	  flwl="wv."+flwl;
+	  ifstream inFile((ppcdir+flwl).c_str(), ifstream::in);
+	  if(!inFile.fail()){
+	    int num=0;
+	    float xa, ya, xo=0, yo=0;
+	    while(inFile>>xa>>ya){
+	      if(( xa<0 || 1<xa ) || (num==0 && xa!=0) || (num>0 && ( xa<=xo || ya<=yo ))){ flag=false; break; }
+	      wx.push_back(xa); wy.push_back(ya);
+	      xo=xa; yo=ya; num++;
+	    }
+	    if(xo!=1 || wx.size()<2) flag=false;
+	    inFile.close();
+	    if(flag){ cerr<<"Loaded "<<wx.size()<<" wavelenth points"<<endl; }
+	    else{ cerr<<"File "<<flwl<<" did not contain valid data"<<endl; exit(1); }
+	  }
+	  else{ cerr<<"Could not open file "<<flwl<<endl; exit(1); }
+	}
 
-          ifstream inFile((ppcdir+"wv.rde").c_str(), ifstream::in);
-          if(!inFile.fail()){
-            int num=0;
-            bool flag=true;
-            float xa, ya, yo=0;
-            while(inFile>>ya>>xa){
-              if(xa<0 || (num>0 && ya<=yo)){ flag=false; break; }
-              qx.push_back(xa); qy.push_back(ya);
-              yo=ya; num++;
-            }
-            if(qx.size()<2) flag=false;
-            inFile.close();
-            if(flag){ cerr<<"Loaded "<<qx.size()<<" RDE coefficients"<<endl; }
-            else{ cerr<<"File wv.rde did not contain valid data"<<endl; exit(1); }
-            rdef=flag;
-          }
+	if(flag){
+	  vector<float> qx, qy;
 
-        if(rdef){
-          //if valid rdef calculate wzs
-          int k=0, n=qy.size();
-          for(vector<float>::iterator i=wy.begin(); i!=wy.end(); i++){
-            float w=*i, r;
-            for(; k<n; k++) if(qy[k]>w) break;
-            if(k==0) r=qx[0];
-            else if(k==n) r=qx[n-1];
-            else{
-              r=((w-qy[k-1])*qx[k]+(qy[k]-w)*qx[k-1])/(qy[k]-qy[k-1]);
-              k--;
-            }
-            wz.push_back(r);
-          }
-        }
+	  ifstream inFile((ppcdir+"wv.rde").c_str(), ifstream::in);
+	  if(!inFile.fail()){
+	    int num=0;
+	    bool flag=true;
+	    float xa, ya, yo=0;
+	    while(inFile>>ya>>xa){
+	      if(xa<0 || (num>0 && ya<=yo)){ flag=false; break; }
+	      qx.push_back(xa); qy.push_back(ya);
+	      yo=ya; num++;
+	    }
+	    if(qx.size()<2) flag=false;
+	    inFile.close();
+	    if(flag){ cerr<<"Loaded "<<qx.size()<<" RDE coefficients"<<endl; }
+	    else{ cerr<<"File wv.rde did not contain valid data"<<endl; exit(1); }
+	    rdef=flag;
+	  }
 
-        {
-          vector<float> qw, qf, qz;
-          float qo=0, wo=wy[0];
-          unsigned int n=wx.size();
-          for(unsigned int i=1; i<n; i++){
-            float qv=wx[i], wv=wy[i];
-            float bin=wv-wo;
-            float wva=wv-bin/2;
-            float val=dppm*doma*omav*(qv-qo)/bin;
-            qw.push_back(wva);
-            qf.push_back(val);
-            if(rdef) qz.push_back(val*(wz[i]+wz[i-1])/2);
-            qo=qv, wo=wv;
-          }
-          float blo=wy[1]-wy[0], bhi=wy[n-1]-wy[n-2];
-          irdes[make_pair(-1,0)].read(qw, qf, blo, bhi);
-          if(rdef) irdes[make_pair(-1,1)].read(qw, qz, blo, bhi);
-        }
-	    } // end of wv.dat styff
-    } // end of wx,wy,wz block
+	  if(rdef){
+	    int k=0, n=qy.size();
+	    for(vector<float>::iterator i=wy.begin(); i!=wy.end(); i++){
+	      float w=*i, r;
+	      for(; k<n; k++) if(qy[k]>w) break;
+	      if(k==0) r=qx[0];
+	      else if(k==n) r=qx[n-1];
+	      else{
+		r=((w-qy[k-1])*qx[k]+(qy[k]-w)*qx[k-1])/(qy[k]-qy[k-1]);
+		k--;
+	      }
+	      wz.push_back(r);
+	    }
+	  }
 
-    // om.wv stuff:
-    for(map<pair<int,int>, irde>::iterator i=irdes.begin(); i!=irdes.end(); ++i){
-      const pair<int,int> & m = i->first;
-      if(m.first>=0){
-        stringstream str;
-        str<<omdir<<"om.wv_"<<m.first<<"."<<m.second;
-        const string & file=str.str();
-
-        bool flag=false;
-        vector<float> qw, qf;
-
-        ifstream inFile(file.c_str(), ifstream::in);
-        if(!inFile.fail()){
-          int num=0;
-          flag=true;
-          float w, f, u=0;
-          while(inFile>>w>>f){
-            if(f<0 || (num>0 && w<=u)){ flag=false; break; }
-            qf.push_back(f*qwv.cherenkov(w)); // direct cherenkov multipcation
-            qw.push_back(w);
-            u=w; num++;
-          }
-          if(qf.size()<2) flag=false;
-          inFile.close();
-          if(flag){ cerr<<"Loaded "<<qf.size()<<" wv points from file "<<file<<endl; }
-          else{ cerr<<"File "<<file<<" did not contain valid data"<<endl; exit(1); }
-        }
-
-        if(flag) i->second.read(qw, qf);
-        else cerr<<"Warning: file "<<file<<" was not read. Omitting hits in this OM type!"<<endl;
+	  {
+	    vector<float> qw, qf, qz;
+	    float qo=0, wo=wy[0];
+	    unsigned int n=wx.size();
+	    for(unsigned int i=1; i<n; i++){
+	      float qv=wx[i], wv=wy[i];
+	      float bin=wv-wo;
+	      float wva=wv-bin/2;
+	      float val=dppm*doma*omav*(qv-qo)/bin;
+	      qw.push_back(wva);
+	      qf.push_back(val);
+	      if(rdef) qz.push_back(val*(wz[i]+wz[i-1])/2);
+	      qo=qv, wo=wv;
+	    }
+	    float blo=wy[1]-wy[0], bhi=wy[n-1]-wy[n-2];
+	    irdes[make_pair(-1,0)].read(qw, qf, blo, bhi);
+	    if(rdef) irdes[make_pair(-1,1)].read(qw, qz, blo, bhi);
+	  }
+	}
       }
-    }
-
-    // direct ppm calculaion block
-    {
-      float sum=0;
-      int k=0;
-      for(float w=qwv.wmin+qwv.bin/2; w<qwv.wmax; w+=qwv.bin, k++){
-        float val=0;
-        for(map<pair<int,int>, irde>::iterator i=irdes.begin(); i!=irdes.end(); ++i){
-          irde & mt = i->second;
-          if(!mt.dat.empty()){
-            float ri=mt.dat[k]*types[i->first.first].rde*mt.rmax*qwv.bin;
-            mt.rde+=ri; mt.sum.push_back(mt.rde); mt.dat[k]=ri;
-            if(val<ri) val=ri;
-          }
-        }
-        sum+=val;
-        env.dat.push_back(val);
-        env.sum.push_back(sum);
-      }
-      env.rde=sum; q.eff*=sum;
-      cerr<<"Calculated value of ppm="<<q.eff<<endl;
-
-      for(int i=0; i<k; i++) env.sum[i]/=sum;
-    }
-
-    float wv0=400; // reference wavelength for icemodel
-    float A, B, D, E, a, k;
-    float Ae, Be, De, Ee, ae, ke;
-    vector<float> dp, be, ba, td, k1, k2, ra, rb;
-
-    {
-      bool flag=true, fail=false;
-      ifstream inFile((icedir+"icemodel.par").c_str(), ifstream::in);
-      if((flag=!inFile.fail())){ // 6 paramter ice model
-        if(flag) flag=(bool)(inFile >> a >> ae);
-        if(flag) flag=(bool)(inFile >> k >> ke);
-        if(flag) flag=(bool)(inFile >> A >> Ae);
-        if(flag) flag=(bool)(inFile >> B >> Be); fail=!flag;
-        if(flag) flag=(bool)(inFile >> D >> De); D=flag?D/pow(wv0, k):1;
-        if(flag) flag=(bool)(inFile >> E >> Ee); E=flag?E/pow(wv0, k):0;
-        if(fail) cerr << "File icemodel.par found, but is corrupt" << endl;
-        inFile.close(); if(fail) exit(1);
-      }
-      else{ cerr << "File icemodel.par was not found" << endl; exit(1); }
-    }
-
-
-    {
-      ifstream inFile((icedir+"icemodel.dat").c_str(), ifstream::in);
-      if(!inFile.fail()){
-        size=0;
-        float dpa, bea, baa, tda, k1a, k2a, bfra, bfrb;
-
-        string in;
-        while(getline(inFile, in)){
-          int num=sscanf(in.c_str(), "%f %f %f %f %f %f %f %f", &dpa, &bea, &baa, &tda, &k1a, &k2a, &bfra, &bfrb);
-
-          if(num>=4){
-            dp.push_back(dpa);
-            be.push_back(bea);
-            ba.push_back(baa);
-            td.push_back(tda);
-            k1.push_back(num>=5?exp(k1a):dk1);
-            k2.push_back(num>=6?exp(k2a):dk2);
-            ra.push_back(num>=7?bfra:1);
-            rb.push_back(num>=8?bfrb:1);
-            size++;
-          }
-        }
-        inFile.close();
-        if(size<1){ cerr << "File icemodel.dat found, but is corrupt" << endl; exit(1); }
-      }
-      else{ cerr << "File icemodel.dat was not found" << endl; exit(1); }
-    }
-
-    dh=size>1?(dp[size-1]-dp[0])/(size-1):100.f;
-    if(dh<=0){ cerr << "Ice table does not use increasing depth spacing" << endl; exit(1); }
-
-    for(int i=0; i<size; i++) if(i>0) if(fabs(dp[i]-dp[i-1]-dh)>dh*XXX){
-	    cerr << "Ice table does not use uniform depth spacing" << endl; exit(1);
-    }
-    cerr<<"Loaded "<<size<<" ice layers"<<endl;
-
-    if(size>MAXLYS){
-      cerr<<"Error: too many layers ("<<size<<"), truncating to "<<MAXLYS<<endl;
-      size=MAXLYS;
-    }
-
-    rdh=1/dh; hmin=zoff-dp[size-1];
-    {
-      d.size=size;
-      d.dh=dh;
-      d.rdh=rdh;
-      d.hmin=hmin;
-    }
-
-    float bble=0, bblz, bbly;
-
-    {
-      ifstream inFile((icedir+"icemodel.bbl").c_str(), ifstream::in);
-      if(!inFile.fail()){
-        if(!(inFile >> bble >> bblz >> bbly)){
-          cerr << "File icemodel.bbl found, but is corrupt" << endl;
-          bble=0;
-        }
-        else{
-          cerr << "Air bubble parameters: " << bble << " " << bblz << " " << bbly << endl;
-        }
-      }
-    }
-
-    for(int i=0; i<size; i++){
-      int j=size-1-i;
-      d.az[i].k1=k1[j]; d.az[i].k2=k2[j];
-      d.az[i].ra=ra[j]; d.az[i].rb=ra[j]*rb[j];
-    }
-
-
-    float arf=0;
-    {
-      char * absm=getenv("ABSM");
-      if(absm!=NULL){
-        cerr<<"Ice absorption table: ";
-        switch(atoi(absm)){
-        case 0:
-          cerr<<"MieDUST";
-          break;
-        case 1:
-          arf=1;
-          cerr<<"FULL400";
-          break;
-        default:
-          cerr<<"UNKNOWN";
-        }
-        cerr<<endl;
-      }
-    }
-
-    float srw=0, srf=1;
-    {
-      char * bfrm=getenv("BFRM");
-      if(bfrm!=NULL){
-        cerr<<"BFR scattering subtraction method: ";
-        switch(atoi(bfrm)){
-        case 0:
-          cerr<<"DEFAULT";
-          break;
-        case 1:
-          srw=1, srf=0;
-          cerr<<"CORRECT";
-          break;
-        case 2:
-          srw=0, srf=0;
-          cerr<<"NO SUB.";
-          break;
-        default:
-          cerr<<"UNKNOWN";
-        }
-        cerr<<endl;
-      }
-    }
-
-    for(int n=0; n<WNUM; n++){
-      float wvi=env.binf((n+0.f)/WNUM);
-      int mi=min(max((int) floor(wvi), 0), qwv.num-1);
-
-      float wvf=env.binf((n+1.f)/WNUM);
-      int mf=min(max((int) floor(wvf), 0), qwv.num-1);
-
-      float wva=qwv.wav(env.binf((n+0.5f)/WNUM));
-      q.wvs[n].w=wva; q.wvs[n].i=qwv.wav(wvi), q.wvs[n].f=qwv.wav(wvf);
 
       for(map<pair<int,int>, irde>::iterator i=irdes.begin(); i!=irdes.end(); ++i){
-        irde & mt = i->second;
-        if(mt.rde>0){
-          vector<float> & wy = mt.dat;
-          float rde;
-          if(mf==mi) rde=wy[mi]*(wvf-wvi);
-          else{
-            rde=(mi+1-wvi)*wy[mi]+(wvf-mf)*wy[mf];
-            for(int i=mi+1; i<mf; i++) rde+=wy[i];
-          }
+	const pair<int,int> & m = i->first;
+	if(m.first>=0){
+	  stringstream str;
+	  str<<omdir<<"om.wv_"<<m.first<<"."<<m.second;
+	  const string & file=str.str();
 
-          rde/=env.rde/WNUM;
-          mt.rat.push_back(rde);
-        }
+	  bool flag=false;
+	  vector<float> qw, qf;
+
+	  ifstream inFile(file.c_str(), ifstream::in);
+	  if(!inFile.fail()){
+	    int num=0;
+	    flag=true;
+	    float w, f, u=0;
+	    while(inFile>>w>>f){
+	      if(f<0 || (num>0 && w<=u)){ flag=false; break; }
+	      qf.push_back(f*qwv.cherenkov(w)); qw.push_back(w);
+	      u=w; num++;
+	    }
+	    if(qf.size()<2) flag=false;
+	    inFile.close();
+	    if(flag){ cerr<<"Loaded "<<qf.size()<<" wv points from file "<<file<<endl; }
+	    else{ cerr<<"File "<<file<<" did not contain valid data"<<endl; exit(1); }
+	  }
+
+	  if(flag) i->second.read(qw, qf);
+	  else cerr<<"Warning: file "<<file<<" was not read. Omitting hits in this OM type!"<<endl;
+	}
       }
 
-      float l_a=pow(wva/wv0, -a);
-      float l_k=pow(wva/wv0, -k);
-      float AB0=A*exp(-B/wv0);
-      float ABl=A*exp(-B/wva);
+      {
+	float sum=0;
+	int k=0;
+	for(float w=qwv.wmin+qwv.bin/2; w<qwv.wmax; w+=qwv.bin, k++){
+	  float val=0;
+	  for(map<pair<int,int>, irde>::iterator i=irdes.begin(); i!=irdes.end(); ++i){
+	    irde & mt = i->second;
+	    if(!mt.dat.empty()){
+	      float ri=mt.dat[k]*types[i->first.first].rde*mt.rmax*qwv.bin;
+	      mt.rde+=ri; mt.sum.push_back(mt.rde); mt.dat[k]=ri;
+	      if(val<ri) val=ri;
+	    }
+	  }
+	  sum+=val;
+	  env.dat.push_back(val);
+	  env.sum.push_back(sum);
+	}
+	env.rde=sum; q.eff*=sum;
+	cerr<<"Calculated value of ppm="<<q.eff<<endl;
 
-      ices & w = z.w[n];
+	for(int i=0; i<k; i++) env.sum[i]/=sum;
+      }
+
+      float wv0=400;
+      float A, B, D, E, a, k;
+      float Ae, Be, De, Ee, ae, ke;
+      vector<float> dp, be, ba, td, k1, k2, ra, rb;
+
+      {
+	bool flag=true, fail=false;
+	ifstream inFile((icedir+"icemodel.par").c_str(), ifstream::in);
+	if((flag=!inFile.fail())){
+	  if(flag) flag=(bool)(inFile >> a >> ae);
+	  if(flag) flag=(bool)(inFile >> k >> ke);
+	  if(flag) flag=(bool)(inFile >> A >> Ae);
+	  if(flag) flag=(bool)(inFile >> B >> Be); fail=!flag;
+	  if(flag) flag=(bool)(inFile >> D >> De); D=flag?D/pow(wv0, k):1;
+	  if(flag) flag=(bool)(inFile >> E >> Ee); E=flag?E/pow(wv0, k):0;
+	  if(fail) cerr << "File icemodel.par found, but is corrupt" << endl;
+	  inFile.close(); if(fail) exit(1);
+	}
+	else{ cerr << "File icemodel.par was not found" << endl; exit(1); }
+      }
+
+      {
+	ifstream inFile((icedir+"icemodel.dat").c_str(), ifstream::in);
+	if(!inFile.fail()){
+	  size=0;
+	  float dpa, bea, baa, tda, k1a, k2a, bfra, bfrb;
+
+	  string in;
+	  while(getline(inFile, in)){
+	    int num=sscanf(in.c_str(), "%f %f %f %f %f %f %f %f", &dpa, &bea, &baa, &tda, &k1a, &k2a, &bfra, &bfrb);
+
+	    if(num>=4){
+	      dp.push_back(dpa);
+	      be.push_back(bea);
+	      ba.push_back(baa);
+	      td.push_back(tda);
+	      k1.push_back(num>=5?exp(k1a):dk1);
+	      k2.push_back(num>=6?exp(k2a):dk2);
+	      ra.push_back(num>=7?bfra:1);
+	      rb.push_back(num>=8?bfrb:1);
+	      size++;
+	    }
+	  }
+	  inFile.close();
+	  if(size<1){ cerr << "File icemodel.dat found, but is corrupt" << endl; exit(1); }
+	}
+	else{ cerr << "File icemodel.dat was not found" << endl; exit(1); }
+      }
+
+      dh=size>1?(dp[size-1]-dp[0])/(size-1):100.f;
+      if(dh<=0){ cerr << "Ice table does not use increasing depth spacing" << endl; exit(1); }
+
+      for(int i=0; i<size; i++) if(i>0) if(fabs(dp[i]-dp[i-1]-dh)>dh*XXX){
+	cerr << "Ice table does not use uniform depth spacing" << endl; exit(1);
+      }
+      cerr<<"Loaded "<<size<<" ice layers"<<endl;
+
+      if(size>MAXLYS){
+	cerr<<"Error: too many layers ("<<size<<"), truncating to "<<MAXLYS<<endl;
+	size=MAXLYS;
+      }
+
+      rdh=1/dh; hmin=zoff-dp[size-1];
+      {
+	d.size=size;
+	d.dh=dh;
+	d.rdh=rdh;
+	d.hmin=hmin;
+      }
+
+      float bble=0, bblz, bbly;
+
+      {
+	ifstream inFile((icedir+"icemodel.bbl").c_str(), ifstream::in);
+	if(!inFile.fail()){
+	  if(!(inFile >> bble >> bblz >> bbly)){
+	    cerr << "File icemodel.bbl found, but is corrupt" << endl;
+	    bble=0;
+	  }
+	  else{
+	    cerr << "Air bubble parameters: " << bble << " " << bblz << " " << bbly << endl;
+	  }
+	}
+      }
 
       for(int i=0; i<size; i++){
-        int j=size-1-i;
-        float bbl=bble>0?dp[j]<bblz&&dp[j]<bbly?bble*(1-dp[j]/bblz)*(1-dp[j]/bbly):0:0;
-        float sca = (bbl+be[j]*l_a - ra[j]*d.sum*(srf+srw*l_a))/(1-d.g);
-        float abs = (D*ba[j]+E)*l_k + (ABl-arf*AB0*l_k)*(1+0.01*td[j]);
-        if(sca>0 && abs>0) w.z[i].sca=sca, w.z[i].abs=abs;
-        else{ cerr << "Invalid value of ice parameter, cannot proceed" << endl; exit(1); }
+	int j=size-1-i;
+	d.az[i].k1=k1[j]; d.az[i].k2=k2[j];
+	d.az[i].ra=ra[j]; d.az[i].rb=ra[j]*rb[j];
       }
 
-      float ng, np=qwv.np(wva*1.e-3, &ng);
-      float c=0.299792458; d.ocv=1/c; w.wvl=n; w.ocm=ng/c;
-      w.coschr=1/np; w.sinchr=sqrt(1-w.coschr*w.coschr);
+      float arf=0;
+      {
+	char * absm=getenv("ABSM");
+	if(absm!=NULL){
+	  cerr<<"Ice absorption table: ";
+	  switch(atoi(absm)){
+	  case 0:
+	    cerr<<"MieDUST";
+	    break;
+	  case 1:
+	    arf=1;
+	    cerr<<"FULL400";
+	    break;
+	  default:
+	    cerr<<"UNKNOWN";
+	  }
+	  cerr<<endl;
+	}
+      }
+
+      float srw=0, srf=1;
+      {
+	char * bfrm=getenv("BFRM");
+	if(bfrm!=NULL){
+	  cerr<<"BFR scattering subtraction method: ";
+	  switch(atoi(bfrm)){
+	  case 0:
+	    cerr<<"DEFAULT";
+	    break;
+	  case 1:
+	    srw=1, srf=0;
+	    cerr<<"CORRECT";
+	    break;
+	  case 2:
+	    srw=0, srf=0;
+	    cerr<<"NO SUB.";
+	    break;
+	  default:
+	    cerr<<"UNKNOWN";
+	  }
+	  cerr<<endl;
+	}
+      }
+
+      for(int n=0; n<WNUM; n++){
+	float wvi=env.binf((n+0.f)/WNUM);
+	int mi=min(max((int) floor(wvi), 0), qwv.num-1);
+
+	float wvf=env.binf((n+1.f)/WNUM);
+	int mf=min(max((int) floor(wvf), 0), qwv.num-1);
+
+	float wva=qwv.wav(env.binf((n+0.5f)/WNUM));
+	q.wvs[n].w=wva; q.wvs[n].i=qwv.wav(wvi), q.wvs[n].f=qwv.wav(wvf);
+
+	for(map<pair<int,int>, irde>::iterator i=irdes.begin(); i!=irdes.end(); ++i){
+	  irde & mt = i->second;
+	  if(mt.rde>0){
+	    vector<float> & wy = mt.dat;
+	    float rde;
+	    if(mf==mi) rde=wy[mi]*(wvf-wvi);
+	    else{
+	      rde=(mi+1-wvi)*wy[mi]+(wvf-mf)*wy[mf];
+	      for(int i=mi+1; i<mf; i++) rde+=wy[i];
+	    }
+
+	    rde/=env.rde/WNUM;
+	    mt.rat.push_back(rde);
+	  }
+	}
+
+	float l_a=pow(wva/wv0, -a);
+	float l_k=pow(wva/wv0, -k);
+	float AB0=A*exp(-B/wv0);
+	float ABl=A*exp(-B/wva);
+
+	ices & w = z.w[n];
+
+	for(int i=0; i<size; i++){
+	  int j=size-1-i;
+	  float bbl=bble>0?dp[j]<bblz&&dp[j]<bbly?bble*(1-dp[j]/bblz)*(1-dp[j]/bbly):0:0;
+	  float sca = (bbl+be[j]*l_a - ra[j]*d.sum*(srf+srw*l_a))/(1-d.g);
+	  float abs = (D*ba[j]+E)*l_k + (ABl-arf*AB0*l_k)*(1+0.01*td[j]);
+	  if(sca>0 && abs>0) w.z[i].sca=sca, w.z[i].abs=abs;
+	  else{ cerr << "Invalid value of ice parameter, cannot proceed" << endl; exit(1); }
+	}
+
+	float ng, np=qwv.np(wva*1.e-3, &ng);
+	float c=0.299792458; d.ocv=1/c; w.wvl=n; w.ocm=ng/c;
+	w.coschr=1/np; w.sinchr=sqrt(1-w.coschr*w.coschr);
       }
     }
 
     cerr<<endl;
-
-
-
   }
-
-  
 } m;

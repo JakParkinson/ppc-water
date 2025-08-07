@@ -476,197 +476,24 @@ void f2k(){
 }
 #endif
 
-void flone(unsigned long long num){
-  addh(num*(q.eff/dppm)/ovr);
-}
 
-void flshift(float m[], float n[], float *r = NULL){
-  if(isnan(n[2])){
-    float xi;
-    sincosf(p.up, &n[2], &xi);
-    n[0]*=xi; n[1]*=xi;
-  }
 
-  float q[3], o[3]={0,0,1};
+// #ifdef XLIB
+// #else
+// void flasher(int str, int dom, unsigned long long num, int itr){
+//   ini();
+//   // flset(str, dom);
 
-  q[0]=m[1]*o[2]-m[2]*o[1]; // m[1]
-  q[1]=m[2]*o[0]-m[0]*o[2]; //-m[0]
-  q[2]=m[0]*o[1]-m[1]*o[0]; // 0
+//   for(int j=0; j<max(1, itr); j++){
+//     p.q=flne;
+//     flone(num);
+//     if(itr>0){
+//       flnz.push_back(""); finc();
+//     }
+//   }
 
-  float norm=sqrt(q[0]*q[0]+q[1]*q[1]+q[2]*q[2]);
-  if(norm>0){
-    float cs=0;
-    for(int i=0; i<3; i++) q[i]/=norm, cs+=o[i]*m[i];
-    float sn=sin(acos(cs)); //norm
+//   eout();
 
-    float R[3][3]={{0}};
-    for(int i=0; i<3; i++)
-      for(int j=0; j<3; j++)
-	R[i][j]=(i==j?cs:sn*q[3-i-j]*((j-i+3)%3==1?1:-1))+(1-cs)*q[i]*q[j];
-
-    for(int i=0; i<3; i++){
-      q[i]=0;
-      for(int j=0; j<3; j++) q[i]+=R[i][j]*n[j];
-    }
-    for(int i=0; i<3; i++) n[i]=q[i];
-
-    if(r!=NULL){
-      for(int i=0; i<3; i++){
-	q[i]=0;
-	for(int j=0; j<3; j++) q[i]+=R[i][j]*r[j];
-      }
-      for(int i=0; i<3; i++) r[i]=q[i];
-    }
-  }
-}
-
-const DOM& flset(int str, int dom){
-  {
-    p.fla=-1, p.ofla=-1;
-    p.ka=0, p.up=0, p.fldr=-1;
-    p.n.x=0, p.n.y=0, p.n.z=1, p.n.w=0;
-  }
-
-  int type=1;
-  static DOM om;
-
-  {
-    float r[3]={0, 0, 0};
-
-    if(str<0){ type=2; str=-str; }
-    if(str==0) switch(dom){ // standard candles
-      case 1: type=3; r[0]=544.07; r[1]=55.89; r[2]=136.86; break;
-      case 2: type=4; r[0]=11.87; r[1]=179.19; r[2]=-205.64; break;
-      }
-    else for(int n=0; n<d.gsize; n++) if(q.names[n].str==str && q.names[n].dom==dom){
-	  p.fla=n;
-	  for(int m=0; m<3; m++) r[m]=q.oms[n].r[m]; break;
-	}
-    cerr<<"Flasher configured at "<<r[0]<<", "<<r[1]<<", "<<r[2]<<endl;
-
-    p.type=type;
-    p.r.x=r[0], p.r.y=r[1], p.r.z=r[2], p.r.w=0;
-    for(int m=0; m<3; m++) om.r[m]=r[m];
-  }
-
-  float fzcr=0.f;
-  {
-    char * FZCR=getenv("FZCR");
-    if(FZCR!=NULL){ fzcr=atof(FZCR);
-      cerr<<"Adjusting flasher LED tilt by "<<fzcr<<" degrees"<<endl;
-    }
-  }
-
-  switch(type){
-  case 1: p.up=(-0.2f+fzcr)*fcv; break;
-  case 2: p.up=(48.1f+fzcr)*fcv; break;
-  case 3: p.up=(90.0f-41.13f)*fcv; break;
-  case 4: p.up=(41.13f-90.0f)*fcv; break;
-  }
-
-  {
-    char * ELEV=getenv("ELEV");
-    if(ELEV!=NULL){
-      float elev=atof(ELEV);
-      cerr<<"Setting LED beam elevation angle to "<<elev<<" degrees"<<endl;
-      p.up=elev*fcv;
-    }
-  }
-
-  {
-    p.ofla=p.fla;
-    char * ofla=getenv("OFLA");
-    if(ofla!=NULL) if(*ofla!=0 && atoi(ofla)==0){
-	p.ofla=-1;
-	cerr<<"Flasher DOM will register photons!"<<endl;
-      }
-  }
-
-  {
-    char * FLDR=getenv("FLDR");
-    p.fldr=FLDR==NULL?-1:atof(FLDR);
-    if(p.fldr>=0){
-      float fold=int(p.fldr/360);
-      float dir=p.fldr-360*fold++;
-      cerr<<"Flasher LEDs are in a "<<fold<<"-fold pattern with LED #0 at "<<dir<<" degrees"<<endl;
-    }
-  }
-
-  float2 v;
-  {
-    float xi=p.fldr*fcv;
-    sincosf(xi, &v.y, &v.x);
-    sincosf(p.up, &p.n.z, &xi);
-    p.n.x=xi*v.x; p.n.y=xi*v.y;
-  }
-
-  float fwid=9.7f;
-  {
-    char * FWID=getenv("FWID");
-    if(FWID!=NULL){ fwid=atof(FWID);
-      cerr<<"Setting flasher beam width to "<<fwid<<" degrees"<<endl;
-    }
-  }
-
-  if(fwid>999.f){
-    p.ka=fwid;
-
-    if(p.fla>=0 && p.fldr>=0 && p.fldr<360){
-      char * bmp=getenv("FTLT");
-      if(bmp!=NULL){
-	float m[3]={0,0,1};
-	float nx, ny, nz;
-	int num=sscanf(bmp, "%f %f %f", &nx, &ny, &nz);
-	if(num==3){
-	  cerr<<"Applying tilt to flasher DOM of ";
-	  m[0]=nx, m[1]=ny, m[2]=nz;
-	}
-	else{
-	  ikey om; om.str=str, om.dom=dom;
-	  if(cx.find(om)!=cx.end()){
-	    V<3>& n = cx[om];
-	    for(int i=0; i<3; i++) m[i]=n[i];
-	    cerr<<"Setting flasher tilt from file cx.dat to ";
-	  }
-	  else cerr<<"Leaving flasher tilt at default of ";
-	}
-	cerr<<m[0]<<", "<<m[1]<<", "<<m[2]<<endl;
-
-	p.n.w=1;
-	const float FLZ=0.07735f, FLR=0.119f-0.008f;
-	p.r.x=FLR*v.x, p.r.y=FLR*v.y, p.r.z=FLZ;
-
-	float n[3]={p.n.x, p.n.y, p.n.z};
-	float r[3]={p.r.x, p.r.y, p.r.z};
-	flshift(m, n, r);
-	p.r.x=r[0], p.r.y=r[1], p.r.z=r[2];
-	p.n.x=n[0], p.n.y=n[1], p.n.z=n[2];
-      }
-    }
-  }
-  else if(fwid>0) p.ka=square(fcv*fwid);
-  else p.ka=fwid;
-
-  pfl=p;
-  return om;
-}
-
-#ifdef XLIB
-#else
-void flasher(int str, int dom, unsigned long long num, int itr){
-  ini();
-  flset(str, dom);
-
-  for(int j=0; j<max(1, itr); j++){
-    p.q=flne;
-    flone(num);
-    if(itr>0){
-      flnz.push_back(""); finc();
-    }
-  }
-
-  eout();
-
-  fin();
-}
-#endif
+//   fin();
+// }
+// #endif

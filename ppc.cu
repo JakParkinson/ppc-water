@@ -193,7 +193,7 @@ int main(int arg_c, char *arg_a[]){
     initialize();
     choose(device);
     fprintf(stderr, "Running flasher simulation on device %d\n", device);
-    flasher(str, dom, num, itr);
+   // flasher(str, dom, num, itr);
   }
 
   stop();
