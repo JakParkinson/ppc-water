@@ -794,54 +794,54 @@ __global__ void propagate(dats * ed, unsigned int num){
       }
 
       if(SCA<XXX){
-	SCA=0;
-	float sf, g, gr;
-	if(hole){
-	  sf=e.SF, g=e.G, gr=e.GR;
-	}
-	else{
-	  sf=e.sf, g=e.g, gr=e.gr;
-	}
+		SCA=0;
+		float sf, g, gr;
+		if(hole){
+		sf=e.SF, g=e.G, gr=e.GR;
+		}
+		else{
+		sf=e.sf, g=e.g, gr=e.gr;
+		}
 
-	float xi=xrnd(s);
-	if(xi>sf){
-	  xi=(1-xi)/(1-sf);
-	  xi=2*xi-1;
-	  if(g!=0){
-	    float ga=(1-g*g)/(1+g*xi);
-	    xi=(ga*ga-square(1-g))/(2*g);
-	  }
-	}
-	else{
-	  xi/=sf;
-	  xi=2*(1-powf(xi, gr));
-	}
+		float xi=xrnd(s);
+		if(xi>sf){
+		xi=(1-xi)/(1-sf);
+		xi=2*xi-1;
+		if(g!=0){
+			float ga=(1-g*g)/(1+g*xi);
+			xi=(ga*ga-square(1-g))/(2*g);
+		}
+		}
+		else{
+		xi/=sf;
+		xi=2*(1-powf(xi, gr));
+		}
 
-	if(xi<0) xi=0; else if(xi>2) xi=2;
+		if(xi<0) xi=0; else if(xi>2) xi=2;
 
-	aniz az=e.az[J];
-	float k1=az.k1, k2=az.k2;
-	float okz=k1*k2;
+		aniz az=e.az[J];
+		float k1=az.k1, k2=az.k2;
+		float okz=k1*k2;
 
-	if(!hole){ // if not in hole ice, rotate coordinate system for anisotropic scattering
-	  float n1=( e.azx*n.x+e.azy*n.y)*k1;
-	  float n2=(-e.azy*n.x+e.azx*n.y)*k2;
-	  n.x=n1*e.azx-n2*e.azy;
-	  n.y=n1*e.azy+n2*e.azx;
-	  n.z/=okz;
-	  my_normalize(n);
-	}
+		if(!hole){ // if not in hole ice, rotate coordinate system for anisotropic scattering
+			float n1=( e.azx*n.x+e.azy*n.y)*k1;
+			float n2=(-e.azy*n.x+e.azx*n.y)*k2;
+			n.x=n1*e.azx-n2*e.azy;
+			n.y=n1*e.azy+n2*e.azx;
+			n.z/=okz;
+			my_normalize(n);
+		}
 
-	rotate(xi, sqrtf(xi*(2-xi)), n, s); // perform scattering
+		rotate(xi, sqrtf(xi*(2-xi)), n, s); // perform scattering
 
-	if(!hole){ // rotate back into default coordinate system
-	  float n1=( e.azx*n.x+e.azy*n.y)/k1;
-	  float n2=(-e.azy*n.x+e.azx*n.y)/k2;
-	  n.x=n1*e.azx-n2*e.azy;
-	  n.y=n1*e.azy+n2*e.azx;
-	  n.z*=okz;
-	  my_normalize(n);
-	}
+		if(!hole){ // rotate back into default coordinate system
+			float n1=( e.azx*n.x+e.azy*n.y)/k1;
+			float n2=(-e.azy*n.x+e.azx*n.y)/k2;
+			n.x=n1*e.azx-n2*e.azy;
+			n.y=n1*e.azy+n2*e.azx;
+			n.z*=okz;
+			my_normalize(n);
+		}
       }
     }
   }

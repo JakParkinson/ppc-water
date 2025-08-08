@@ -166,17 +166,13 @@ float yield(float E, float dr, int type){
   return q.eff*nph;
 }
 
-#ifdef XLIB
-#else
+
 deque<string> flnz;
-#endif
+
 
 unsigned int flnb=0, flne=0;
-#ifdef XCPU
 unsigned int & flnd = flne;
-#else
-unsigned int flnd=0;
-#endif
+
 
 #ifdef DTMN
 int sign(float x){ return x<0?-1:x>0?1:0; }
@@ -193,10 +189,10 @@ int hcmp(const void *a, const void *b){
 }
 
 void print(){
-#ifndef DTMN
-  if((int) ( flnb - flnd ) < 0)
-#endif
-    qsort(q.hits, d.hidx, sizeof(hit), hcmp);
+  #ifndef DTMN
+    if((int) ( flnb - flnd ) < 0)
+  #endif
+  qsort(q.hits, d.hidx, sizeof(hit), hcmp);
 
   for(unsigned int i=0; i<d.hidx; i++){
     hit & h = q.hits[i];
@@ -206,11 +202,7 @@ void print(){
     }
 
     for(; (int) ( flnb - h.n ) < 0; flnb++){
-
-#ifdef XLIB
-#else
       cout<<flnz.front()<<endl;
-#endif
       flnz.pop_front();
     }
 
@@ -238,10 +230,10 @@ void print(){
     if(flag){
       map<int, itype>::iterator it=types.find(n.omt);
       if(it!=types.end()){
-	V<3> dir; dir[0]=nx, dir[1]=ny, dir[2]=nz;
-	V<3> pos; pos[0]=rx, pos[1]=ry, pos[2]=rz;
-	pmt=it->second.getPMT(dir, pos, n.tilt, xrnd(), n.azi);
-	flag=pmt>=0;
+        V<3> dir; dir[0]=nx, dir[1]=ny, dir[2]=nz;
+        V<3> pos; pos[0]=rx, pos[1]=ry, pos[2]=rz;
+        pmt=it->second.getPMT(dir, pos, n.tilt, xrnd(), n.azi);
+        flag=pmt>=0;
       }
       else flag=false;
     }
@@ -254,49 +246,43 @@ void print(){
 
       float ph=n.azi;
       if(ph>=0){
-	float drx=-omr*rx-dc*cos(fcv*ph);
-	float dry=-omr*ry-dc*sin(fcv*ph);
-	float a=nx*nx+ny*ny;
-	if(a>0){
-	  float b=-2*(nx*drx+ny*dry);
-	  float c=drx*drx+dry*dry-rc*rc;
-	  float D=b*b-4*a*c;
-	  if(D>=0){
-	    float h1=(-b+sqrt(D))/(2*a);
-	    if(h1>0) flag=false;
-	  }
-	}
+              
+        float drx=-omr*rx-dc*cos(fcv*ph);
+        float dry=-omr*ry-dc*sin(fcv*ph);
+        float a=nx*nx+ny*ny;
+        if(a>0){
+          float b=-2*(nx*drx+ny*dry);
+          float c=drx*drx+dry*dry-rc*rc;
+          float D=b*b-4*a*c;
+          if(D>=0){
+            float h1=(-b+sqrt(D))/(2*a);
+            if(h1>0) flag=false;
+          }
+        }
       }
     }
 
     if(flag){
       float wv=q.wvs[h.z].x();
-#ifdef XLIB
-#else
       if(nextgen){
-	printf("HIT %d %d_%d %f %f %f %f %f %f\n", n.str, n.dom, pmt, h.t, wv, h.pth, h.pph, h.dth, h.dph);
+	      printf("HIT %d %d_%d %f %f %f %f %f %f\n", n.str, n.dom, pmt, h.t, wv, h.pth, h.pph, h.dth, h.dph);
       }
       else{
-	printf("HIT %d %d %f %f %f %f %f %f\n", n.str, n.dom, h.t, wv, h.pth, h.pph, h.dth, h.dph);
+	      printf("HIT %d %d %f %f %f %f %f %f\n", n.str, n.dom, h.t, wv, h.pth, h.pph, h.dth, h.dph);
       }
-#endif
     }
   }
 
   for(; (int) ( flnb - flnd ) < 0; flnb++){
-#ifdef XLIB
-#else
     cout<<flnz.front()<<endl;
-#endif
     flnz.pop_front();
   }
 }
 
 void output(){
-#ifdef USE_I3_LOGGING
-  log_info_stream(pn << " ("<<pmax<<") photons from " << pk << " ("<<pmxo<<") tracks");
-#endif
-
+  #ifdef USE_I3_LOGGING
+    log_info_stream(pn << " ("<<pmax<<") photons from " << pk << " ("<<pmxo<<") tracks");
+  #endif
   kernel(pn); pn=0; pk=0;
 
 }
@@ -359,48 +345,7 @@ unsigned long long poidev(double xm){  // sample Poisson distribution with mean 
   return um;
 }
 
-unsigned long long bnldev(unsigned long long n, double pp){  // down-sample with binomial distribution
-  unsigned long long j, bnl;
-  double am, em, g, angle, p, sq, t, y;
-  double pc, plog, pclog, en, oldg;
 
-  p=(pp<=0.5 ? pp : 1-pp);
-  am=n*p;
-
-  if(n<25){
-    bnl=0;
-    for(j=1; j<=n; j++) if(xrnd()<p) bnl++;
-  }
-  else if(am<1){
-    g=exp(-am);
-    t=1;
-    for(j=0; j<=n; j++){
-      t*=xrnd();
-      if(t<g) break;
-    }
-    bnl=(j<=n ? j : n);
-  }
-  else{
-    en=n;
-    oldg=gammln(en+1);
-    pc=1-p;
-    plog=log(p);
-    pclog=log(pc);
-    sq=sqrt(2*am*pc);
-    do{
-      do{
-	angle=FPI*xrnd();
-	y=tan(angle);
-	em=sq*y+am;
-      } while(em<0 || em>=(en+1));
-      em=floor(em);
-      t=1.2*sq*(1+y*y)*exp(oldg-gammln(em+1)-gammln(en-em+1)+em*plog+(en-em)*pclog);
-    } while(xrnd()>t);
-    bnl=em;
-  }
-  if(p!=pp) bnl=n-bnl;
-  return bnl;
-}
 
 void addf(float rx, float ry, float rz, float t, unsigned long long num){
   p.r.x=rx; p.r.y=ry; p.r.z=rz; p.r.w=t; p.type=1;
@@ -476,24 +421,3 @@ void f2k(){
 }
 #endif
 
-
-
-// #ifdef XLIB
-// #else
-// void flasher(int str, int dom, unsigned long long num, int itr){
-//   ini();
-//   // flset(str, dom);
-
-//   for(int j=0; j<max(1, itr); j++){
-//     p.q=flne;
-//     flone(num);
-//     if(itr>0){
-//       flnz.push_back(""); finc();
-//     }
-//   }
-
-//   eout();
-
-//   fin();
-// }
-// #endif
