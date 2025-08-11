@@ -48,9 +48,11 @@ namespace xppc{
     pn=0; pk=0;
 
     ntot=nblk*nthr;
-    pmax=ntot*NPHO;
-    pmxo=pmax/OVER;
+    pmax=ntot*NPHO; // NPHO = 1024  (maximum number of photons propagated by one thread)
+    pmxo=pmax/OVER; // OVER =1
     pmax=pmxo*OVER;
+
+    // d is dats struct from ini.cxx
     d.hnum=pmax/hquo;
 
     d.gdev=0; d.gnum=1;
@@ -171,6 +173,7 @@ int main(int arg_c, char *arg_a[]){
 	}
   }
   else if(arg_c<=2){
+    // f2k mode!
     int device=0;
     if(arg_c>1) device=atoi(arg_a[1]);
     initialize();
@@ -179,20 +182,7 @@ int main(int arg_c, char *arg_a[]){
     f2k();
   }
   else{
-    int str=0, dom=0, device=0, itr=0;
-    unsigned long long num=1000000ULL;
-
-    if(arg_c>1) str=atoi(arg_a[1]);
-    if(arg_c>2) dom=atoi(arg_a[2]);
-    if(arg_c>3){
-      num=(unsigned long long) atof(arg_a[3]);
-      char * sub = strchr(arg_a[3], '*');
-      if(sub!=NULL) itr=(int) atof(++sub);
-    }
-    if(arg_c>4) device=atoi(arg_a[4]);
-    initialize();
-    choose(device);
-    fprintf(stderr, "Running flasher simulation on device %d\n", device);
+    cerr << "supposed to be flasher mode , but not currently using" << endl;
    // flasher(str, dom, num, itr);
   }
 
