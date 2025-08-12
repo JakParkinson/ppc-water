@@ -208,11 +208,15 @@ void print(){
 
     name n=q.names[h.i];
 
+    // i think hv is 1200...
     bool flag=n.hv>0;
+    
+    //regardless flag should be true here
 
     if(flag){
       irde & mt = irdes[make_pair(n.omt,n.type)];
       flag=mt.rde>0&&xrnd()<mt.rat[h.z]*n.rde/mt.rmax;
+      // this this is the wavelength downsampler
     }
 
     float nx, ny, nz, rx, ry, rz;
@@ -233,6 +237,7 @@ void print(){
         V<3> dir; dir[0]=nx, dir[1]=ny, dir[2]=nz;
         V<3> pos; pos[0]=rx, pos[1]=ry, pos[2]=rz;
         pmt=it->second.getPMT(dir, pos, n.tilt, xrnd(), n.azi);
+        // think this is the angualr accetpance
         flag=pmt>=0;
       }
       else flag=false;
@@ -257,6 +262,7 @@ void print(){
           if(D>=0){
             float h1=(-b+sqrt(D))/(2*a);
             if(h1>0) flag=false;
+            // not sure what this is... looks like some geoemtry check maybe cable shadow?
           }
         }
       }
@@ -265,6 +271,7 @@ void print(){
     if(flag){
       float wv=q.wvs[h.z].x();
       if(nextgen){
+        // difference between nextgen and old is just the pmt number
 	      printf("HIT %d %d_%d %f %f %f %f %f %f\n", n.str, n.dom, pmt, h.t, wv, h.pth, h.pph, h.dth, h.dph);
       }
       else{
@@ -354,7 +361,6 @@ void addf(float rx, float ry, float rz, float t, unsigned long long num){
 }
 
 // removed addp for flshers
-
 
 void finc(){
   flne++;
