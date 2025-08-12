@@ -66,6 +66,7 @@
         "__bit_reference": "cpp",
         "__hash_table": "cpp",
         "__string": "cpp",
-        "ios": "cpp"
+        "ios": "cpp",
+        "map": "cpp"
     }
 }

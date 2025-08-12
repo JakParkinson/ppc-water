@@ -353,28 +353,7 @@ void addf(float rx, float ry, float rz, float t, unsigned long long num){
   p.n.w=1; addh(num);
 }
 
-void addp(float rx, float ry, float rz, float t, float E, float dr, int type, float scale = 1){
-  p.r.x=rx; p.r.y=ry; p.r.z=rz; p.r.w=t;
-  if(type<0){
-    p.c=pfl.c;
-    switch(type){
-    case -1: dr=0; p.ka=-2; break; // linear cone around n
-    case -2: dr=0;          break; // 2d gaussian around n
-    case -3: dr=0; p.ka=-1; break; // isotropic
-    case -4: // flset-configured flasher
-    default: dr=pfl.n.w;
-      p.type=pfl.type; p.r=pfl.r; p.n=pfl.n;
-    }
-  }
-  else{
-    p.type=-type;
-    p.beta=1; p.tau=0;
-  }
-
-  unsigned long long num=poidev(scale*yield(E, dr, type)/ovr);
-  addh(num);
-}
-
+// removed addp for flshers
 
 
 void finc(){
@@ -412,7 +391,7 @@ void f2k(){
       else if(0==strcmp(name, "e+")) type=13;
       else if(0==strcmp(name, "munu") || 0==strcmp(name, "hadr")) type=101;
       else if(0==strcmp(name, "ph")) addf(x, y, z, t, E);
-      if(type>=0) addp(x, y, z, t, E, l, type);
+   //   if(type>=0) addp(x, y, z, t, E, l, type);
     }
   }
   eout();

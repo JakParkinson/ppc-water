@@ -700,32 +700,32 @@ struct ini{
     {
       ifstream inFile((omdir+"om.conf").c_str(), ifstream::in);
       if(!inFile.fail()){
-	string in;
-	while(getline(inFile, in)){
-	  int m;
-	  unsigned int n;
-	  itype t;
-	  float th, ph;
-	  float other;
-	  int read=sscanf(in.c_str(), "%*s %d %f %f %f %f %d %f %f %f", &m, &t.area, &t.beta, &t.Rr, &t.Rz, &n, &th, &ph, &other);
-	  t.cable=read>=9?other:0;
-	  if(read>=8){
-	    t.add(th, ph);
-	    for(unsigned int i=1; i<n && getline(inFile, in); i++)
-	      if(2==sscanf(in.c_str(), "%f %f %f", &th, &ph, &other)) t.add(th, ph);
-	    if(t.dirs.size()==n) types.insert(make_pair(m, t));
-	  }
-	}
-	inFile.close();
-      }
+		string in;
+		while(getline(inFile, in)){
+			int m;
+			unsigned int n;
+			itype t;
+			float th, ph;
+			float other;
+			int read=sscanf(in.c_str(), "%*s %d %f %f %f %f %d %f %f %f", &m, &t.area, &t.beta, &t.Rr, &t.Rz, &n, &th, &ph, &other);
+			t.cable=read>=9?other:0;
+			if(read>=8){
+				t.add(th, ph);
+				for(unsigned int i=1; i<n && getline(inFile, in); i++)
+				if(2==sscanf(in.c_str(), "%f %f %f", &th, &ph, &other)) t.add(th, ph);
+				if(t.dirs.size()==n) types.insert(make_pair(m, t));
+			}
+		}
+		inFile.close();
+		}
 
-      if(!types.empty()){
-	if(ico.ini(omdir+"om.dirs")<1){ cerr<<"Error: could not initialize an array of directions"<<endl; exit(1); }
-	nextgen=true;
-	for(map<int, itype>::iterator j=types.begin(); j!=types.end(); ++j){
-	  j->second.fraq();
-	  cerr<<" OM Type "<<j->first<<" with "<<j->second.dirs.size()<<" PMTs added ("<<j->second.rde<<")"<<endl;
-	}
+		if(!types.empty()){
+      if(ico.ini(omdir+"om.dirs")<1){ cerr<<"Error: could not initialize an array of directions"<<endl; exit(1); }
+      nextgen=true;
+      for(map<int, itype>::iterator j=types.begin(); j!=types.end(); ++j){
+        j->second.fraq();
+        cerr<<" OM Type "<<j->first<<" with "<<j->second.dirs.size()<<" PMTs added ("<<j->second.rde<<")"<<endl;
+      }
       }
     }
 
@@ -739,21 +739,21 @@ struct ini{
 
       ifstream inFile((ppcdir+"rnd.txt").c_str(), ifstream::in);
       if(!inFile.fail()){
-	string in;
-	while(getline(inFile, in)){
-	  stringstream str(in);
-	  unsigned int a;
-	  if(str>>a) rx.push_back(a);
-	}
-	if(rx.size()<1){ cerr<<"File rnd.txt did not contain valid data"<<endl; exit(1); }
-	inFile.close();
+        string in;
+        while(getline(inFile, in)){
+          stringstream str(in);
+          unsigned int a;
+          if(str>>a) rx.push_back(a);
+        }
+        if(rx.size()<1){ cerr<<"File rnd.txt did not contain valid data"<<endl; exit(1); }
+        inFile.close();
       }
       else{ cerr<<"Could not open file rnd.txt"<<endl; exit(1); }
 
       size=rx.size();
       if(size>MAXRND){
-	cerr<<"Error: too many random multipliers ("<<size<<"), truncating to "<<MAXRND<<endl;
-	size=MAXRND;
+        cerr<<"Error: too many random multipliers ("<<size<<"), truncating to "<<MAXRND<<endl;
+        size=MAXRND;
       }
 
       cerr<<"Loaded "<<size<<" random multipliers"<<endl;
@@ -770,6 +770,7 @@ struct ini{
     {
       ifstream inFile((ppcdir+"geo-f2k").c_str(), ifstream::in);
       if(!inFile.fail()){
+        
 	if(!i3oms.empty()){
 	  i3oms.clear();
 	  cerr<<"Warning: overwriting existing geometry!"<<endl;
@@ -867,45 +868,24 @@ struct ini{
 	inFile.close();
       }
     }
-    {
-      ifstream inFile((ppcdir+"hvs-f2k").c_str(), ifstream::in);
-      if(!inFile.fail()){
-	if(!hvs.empty()){
-	  hvs.clear();
-	  cerr<<"Warning: overwriting existing HV table!"<<endl;
-	}
-	ikey om;
-	float hv;
-	while(inFile>>om.str>>om.dom>>hv) if(om.isinice()) hvs.insert(make_pair(om, hv));
-	inFile.close();
-      }
-    }
 
-    {
-      ifstream inFile((ppcdir+"cx.dat").c_str(), ifstream::in);
-      if(!inFile.fail()){
-	ikey om;
-	V<3> dir;
-	float r;
-	while(inFile >> om.str >> om.dom >> dir[0] >> dir[1] >> dir[2] >> r) cx[om]=dir;
-	if(cx.size()>0) cerr<<"Loaded "<<cx.size()<<" DOM orientations"<<endl;
-	else{ cerr<<"File cx.dat did not contain valid data"<<endl; exit(1); }
-	inFile.close();
-      }
-    }
+
+      // no hvs f2k , cx.dat
+
+
     {
       ifstream inFile((ppcdir+"dx.dat").c_str(), ifstream::in);
       if(!inFile.fail()){
-	ikey om;
-	float dir;
-	float r;
-	while(inFile >> om.str >> om.dom >> dir >> r){
-	  while(dir<0) dir+=360.f; // negative value means unset
-	  dx[om]=dir;
-	}
-	if(dx.size()>0) cerr<<"Loaded "<<dx.size()<<" cable positions"<<endl;
-	else{ cerr<<"File dx.dat did not contain valid data"<<endl; exit(1); }
-	inFile.close();
+        ikey om;
+        float dir;
+        float r;
+        while(inFile >> om.str >> om.dom >> dir >> r){
+          while(dir<0) dir+=360.f; // negative value means unset
+          dx[om]=dir;
+        }
+        if(dx.size()>0) cerr<<"Loaded "<<dx.size()<<" cable positions"<<endl;
+        else{ cerr<<"File dx.dat did not contain valid data"<<endl; exit(1); }
+        inFile.close();
       }
     }
 
@@ -918,57 +898,57 @@ struct ini{
 
       sort(i3oms.begin(), i3oms.end());
       for(vector<OM>::iterator i=i3oms.begin(); i!=i3oms.end(); ++i) if(i->isinice()){
-	ikey om(*i);
+        ikey om(*i);
 
-	int m, t;
-	float r, h;
-	V<3> tilt;
-	float azi = -1.f;
+        int m, t;
+        float r, h;
+        V<3> tilt;
+        float azi = -1.f;
 
-	if(omts.empty()) m=-1;
-	else{
-	  map<ikey, int>::iterator j=omts.find(om);
-	  m=j==omts.end()?-1:j->second;
-	  map<int, itype>::const_iterator it=types.find(m);
-	  if(it==types.end()) m=-1;
+        if(omts.empty()) m=-1;
+        else{
+          map<ikey, int>::iterator j=omts.find(om);
+          m=j==omts.end()?-1:j->second;
+          map<int, itype>::const_iterator it=types.find(m);
+          if(it==types.end()) m=-1;
 
-	  it=types.find(m);
-	  if(it!=types.end()){
-	    const itype & t=it->second;
-	    i->R=t.Rr, i->F=t.Rz/t.Rr;
-	  }
-	}
+          it=types.find(m);
+          if(it!=types.end()){
+            const itype & t=it->second;
+            i->R=t.Rr, i->F=t.Rz/t.Rr;
+          }
+        }
 
-	Rr=max(Rr, i->R), Rz=max(Rz, i->R*fabs(i->F));
-	oms.push_back(*i);
+        Rr=max(Rr, i->R), Rz=max(Rz, i->R*fabs(i->F));
+        oms.push_back(*i);
 
-	{
-	  map<ikey, pair<float, int> >::iterator j=rdes.find(om);
-	  if(j!=rdes.end()){
-	    nhqe++;
-	    r=j->second.first;
-	    t=j->second.second;
-	  }
-	  else r=1, t=0;
+        {
+          map<ikey, pair<float, int> >::iterator j=rdes.find(om);
+          if(j!=rdes.end()){
+            nhqe++;
+            r=j->second.first;
+            t=j->second.second;
+          }
+          else r=1, t=0;
 
-	  irdes[make_pair(m,t)].addr(r);
-	}
+          irdes[make_pair(m,t)].addr(r);
+        }
 
-	if(hvs.empty()) h=1200;
-	else{
-	  map<ikey, float>::iterator j=hvs.find(om);
-	  h=j==hvs.end()?0:j->second;
-	}
+        if(hvs.empty()) h=1200;
+        else{
+          map<ikey, float>::iterator j=hvs.find(om);
+          h=j==hvs.end()?0:j->second;
+        }
 
-	{
-	  map<ikey, V<3> >::iterator ci=cx.find(om);
-	  if(ci!=cx.end()) tilt=ci->second;
+        {
+          map<ikey, V<3> >::iterator ci=cx.find(om);
+          if(ci!=cx.end()) tilt=ci->second;
 
-	  map<ikey, float >::iterator di=dx.find(om);
-	  if(di!=dx.end()) azi = di->second;
-	}
+          map<ikey, float >::iterator di=dx.find(om);
+          if(di!=dx.end()) azi = di->second;
+        }
 
-	names.push_back(name(om, m, t, r, h, tilt, azi));
+        names.push_back(name(om, m, t, r, h, tilt, azi));
       }
       if(nhqe>0) cerr<<"Loaded "<<nhqe<<" RDE coefficients"<<endl;
       for(map<pair<int,int>, irde>::const_iterator i=irdes.begin(); i!=irdes.end(); ++i)
@@ -1037,15 +1017,15 @@ struct ini{
       d.rx=0;
       int n=0;
       for(map<unsigned short, short>::iterator i=num.begin(); i!=num.end(); ++i, n++){
-	unsigned short str=i->first;
-	line & s = sc[str];
-	s.max=i->second-1;
-	i->second=n;
-	s.r=Rr+sqrt(s.r);
-	if(d.hr>s.r) s.r=d.hr;
-	if(d.rx<s.r) d.rx=s.r;
-	s.dl-=Rz, s.dh+=Rz;
-	d.sc[n]=s;
+        unsigned short str=i->first;
+        line & s = sc[str];
+        s.max=i->second-1;
+        i->second=n;
+        s.r=Rr+sqrt(s.r);
+        if(d.hr>s.r) s.r=d.hr;
+        if(d.rx<s.r) d.rx=s.r;
+        s.dl-=Rz, s.dh+=Rz;
+        d.sc[n]=s;
       }
     }
 
@@ -1596,50 +1576,51 @@ struct ini{
       }
 
       for(int n=0; n<WNUM; n++){
-	float wvi=env.binf((n+0.f)/WNUM);
-	int mi=min(max((int) floor(wvi), 0), qwv.num-1);
+        // wavelength envope creation
+        float wvi=env.binf((n+0.f)/WNUM);
+        int mi=min(max((int) floor(wvi), 0), qwv.num-1);
 
-	float wvf=env.binf((n+1.f)/WNUM);
-	int mf=min(max((int) floor(wvf), 0), qwv.num-1);
+        float wvf=env.binf((n+1.f)/WNUM);
+        int mf=min(max((int) floor(wvf), 0), qwv.num-1);
 
-	float wva=qwv.wav(env.binf((n+0.5f)/WNUM));
-	q.wvs[n].w=wva; q.wvs[n].i=qwv.wav(wvi), q.wvs[n].f=qwv.wav(wvf);
+        float wva=qwv.wav(env.binf((n+0.5f)/WNUM));
+        q.wvs[n].w=wva; q.wvs[n].i=qwv.wav(wvi), q.wvs[n].f=qwv.wav(wvf);
 
-	for(map<pair<int,int>, irde>::iterator i=irdes.begin(); i!=irdes.end(); ++i){
-	  irde & mt = i->second;
-	  if(mt.rde>0){
-	    vector<float> & wy = mt.dat;
-	    float rde;
-	    if(mf==mi) rde=wy[mi]*(wvf-wvi);
-	    else{
-	      rde=(mi+1-wvi)*wy[mi]+(wvf-mf)*wy[mf];
-	      for(int i=mi+1; i<mf; i++) rde+=wy[i];
-	    }
+        for(map<pair<int,int>, irde>::iterator i=irdes.begin(); i!=irdes.end(); ++i){
+          irde & mt = i->second;
+          if(mt.rde>0){
+            vector<float> & wy = mt.dat;
+            float rde;
+            if(mf==mi) rde=wy[mi]*(wvf-wvi);
+            else{
+              rde=(mi+1-wvi)*wy[mi]+(wvf-mf)*wy[mf];
+              for(int i=mi+1; i<mf; i++) rde+=wy[i];
+            }
 
-	    rde/=env.rde/WNUM;
-	    mt.rat.push_back(rde);
-	  }
-	}
+            rde/=env.rde/WNUM;
+            mt.rat.push_back(rde);
+          }
+        }
 
-	float l_a=pow(wva/wv0, -a);
-	float l_k=pow(wva/wv0, -k);
-	float AB0=A*exp(-B/wv0);
-	float ABl=A*exp(-B/wva);
+        float l_a=pow(wva/wv0, -a);
+        float l_k=pow(wva/wv0, -k);
+        float AB0=A*exp(-B/wv0);
+        float ABl=A*exp(-B/wva);
 
-	ices & w = z.w[n];
+        ices & w = z.w[n];
 
-	for(int i=0; i<size; i++){
-	  int j=size-1-i;
-	  float bbl=bble>0?dp[j]<bblz&&dp[j]<bbly?bble*(1-dp[j]/bblz)*(1-dp[j]/bbly):0:0;
-	  float sca = (bbl+be[j]*l_a - ra[j]*d.sum*(srf+srw*l_a))/(1-d.g);
-	  float abs = (D*ba[j]+E)*l_k + (ABl-arf*AB0*l_k)*(1+0.01*td[j]);
-	  if(sca>0 && abs>0) w.z[i].sca=sca, w.z[i].abs=abs;
-	  else{ cerr << "Invalid value of ice parameter, cannot proceed" << endl; exit(1); }
-	}
+        for(int i=0; i<size; i++){
+          int j=size-1-i;
+          float bbl=bble>0?dp[j]<bblz&&dp[j]<bbly?bble*(1-dp[j]/bblz)*(1-dp[j]/bbly):0:0;
+          float sca = (bbl+be[j]*l_a - ra[j]*d.sum*(srf+srw*l_a))/(1-d.g);
+          float abs = (D*ba[j]+E)*l_k + (ABl-arf*AB0*l_k)*(1+0.01*td[j]);
+          if(sca>0 && abs>0) w.z[i].sca=sca, w.z[i].abs=abs;
+          else{ cerr << "Invalid value of ice parameter, cannot proceed" << endl; exit(1); }
+        }
 
-	float ng, np=qwv.np(wva*1.e-3, &ng);
-	float c=0.299792458; d.ocv=1/c; w.wvl=n; w.ocm=ng/c;
-	w.coschr=1/np; w.sinchr=sqrt(1-w.coschr*w.coschr);
+        float ng, np=qwv.np(wva*1.e-3, &ng);
+        float c=0.299792458; d.ocv=1/c; w.wvl=n; w.ocm=ng/c;
+        w.coschr=1/np; w.sinchr=sqrt(1-w.coschr*w.coschr);
       }
     }
 
