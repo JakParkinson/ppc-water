@@ -118,6 +118,7 @@ struct mesh{
 bool nextgen=false;
 
 struct itype{
+	// OM information
   float area, beta, rde, fx, Rr, Rz, cable;
   vector< V<3> > dirs;
 
@@ -157,6 +158,7 @@ struct itype{
   }
 
   void add(float th, float ph){
+	// adding pmt directions
     float ct=cos(th*fcv), st=sin(th*fcv);
     float cp=cos(ph*fcv), sp=sin(ph*fcv);
     V<3> dir;
@@ -170,6 +172,8 @@ struct itype{
   }
 
   float f(float x){ // angular sensitivity curve (peaks at 1)
+    // angular acceptnace function
+	/// x is cos(theta) w.r.t. pmt axis, returns value 0-1 representign acceptance prob. does accept-reject with it
     if(beta<-1) return sqrt(1-x*x);
     else{
       float sum=x>0?x:0;
@@ -206,18 +210,19 @@ struct itype{
   }
 
   int getPMT(V<3> dir, V<3> pos, V<3> tilt, float rnd, float ph = -1.f){
+	// pmt 'assignment' and hit acceptance
     if(def){
       bool flag;
       if(mas>0){
-	float sum;
-	{
-	  float x = dir.dot(tilt);
-	  float y=1;
-	  sum=s[0];
-	  for(unsigned int i=1; i<s.size(); i++){ y*=x; sum+=s[i]*y; }
-	}
+		float sum;
+		{
+			float x = dir.dot(tilt);
+			float y=1;
+			sum=s[0];
+			for(unsigned int i=1; i<s.size(); i++){ y*=x; sum+=s[i]*y; }
+		}
 
-	flag=mas*rnd<sum;
+		flag=mas*rnd<sum;
       }
       else{
 	flag=pos.dot(tilt)>s[0];
@@ -226,12 +231,12 @@ struct itype{
     }
     else{
       if(ph>=0){ // rotating photon by -ph instead of PMTs
-	ph-=cable;
-	float cp=cos(fcv*ph);
-	float sp=sin(fcv*ph);
-	float nx=dir[0]*cp+dir[1]*sp;
-	float ny=dir[1]*cp-dir[0]*sp;
-	dir[0]=nx, dir[1]=ny;
+        ph-=cable;
+        float cp=cos(fcv*ph);
+        float sp=sin(fcv*ph);
+        float nx=dir[0]*cp+dir[1]*sp;
+        float ny=dir[1]*cp-dir[0]*sp;
+        dir[0]=nx, dir[1]=ny;
       }
 
       float crx=fx*xarea(dir[2]);
@@ -239,8 +244,9 @@ struct itype{
       unsigned int k=0;
       float tot=0;
       for(vector< V<3> >::const_iterator j=dirs.begin(); j!=dirs.end(); ++j, k++){
-	tot+=f(-dir.dot(*j))/crx;
-	if(tot>rnd) break;
+        // loop thorugh pmt directions , calculate angular acceptance with cos(theta) w.r.t. pmt axis
+        tot+=f(-dir.dot(*j))/crx;
+        if(tot>rnd) break;
       }
 
       return k<dirs.size()?(int) k:-1;
@@ -338,7 +344,7 @@ struct hit{
   float pth, pph, dth, dph;
 };
 
-#ifdef XCPU
+
 struct int4{
   int x, y, z, w;
 };
@@ -354,7 +360,7 @@ struct float3:float2{
 struct float4:float3{
   float w;
 };
-#endif
+
 
 struct pbuf{
   float4 r;        // location, time
