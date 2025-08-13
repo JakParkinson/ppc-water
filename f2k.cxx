@@ -163,6 +163,7 @@ float yield(float E, float dr, int type){
     }
   }
 
+  //q.eff contains ppm with integrated Cherenkov * effective area
   return q.eff*nph;
 }
 
@@ -295,6 +296,7 @@ void output(){
 }
 
 void addh(unsigned long long num){
+  // direct number of photons
   do{
     p.num=min((unsigned long long) (pmax-pn), num);
     num-=p.num; pn+=p.num; q.pz[pk++]=p;
@@ -355,6 +357,7 @@ unsigned long long poidev(double xm){  // sample Poisson distribution with mean 
 
 
 void addf(float rx, float ry, float rz, float t, unsigned long long num){
+  // direct number of photons
   p.r.x=rx; p.r.y=ry; p.r.z=rz; p.r.w=t; p.type=1;
   p.ka=0, p.up=0, p.fldr=-1; p.fla=-1; p.ofla=-1;
   p.n.w=1; addh(num);
